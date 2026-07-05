@@ -223,5 +223,17 @@ document.getElementById('resetBtn').addEventListener('click', () => {
 
 document.getElementById('printBtn').addEventListener('click', () => window.print());
 
+const tabButtons = [...document.querySelectorAll('.tab-btn')];
+const tabPanels = Object.fromEntries([...document.querySelectorAll('.tab-panel')].map(panel => [panel.dataset.tabPanel, panel]));
+
+function activateTab(name) {
+  tabButtons.forEach(btn => btn.setAttribute('aria-selected', String(btn.dataset.tab === name)));
+  Object.entries(tabPanels).forEach(([key, panel]) => { panel.hidden = key !== name; });
+}
+
+tabButtons.forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+document.getElementById('proceedBtn').addEventListener('click', () => activateTab('calculate'));
+
+activateTab('config');
 restoreDefaultStatutoryToggles();
 calculate();
