@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kenya PAYE & Tax Calculator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero-card">
+      <div>
+        <p class="eyebrow">Kenya payroll calculator</p>
+        <h1>PAYE, statutory deductions & net pay calculator</h1>
+        <p class="hero-copy">Configure NSSF, SHIF, AHL, allowances, benefits, pension and insurance reliefs in one clean payroll simulation.</p>
+      </div>
+      <div class="hero-actions">
+        <button type="button" class="ghost-button" id="resetBtn">Reset</button>
+        <button type="button" class="primary-button" id="printBtn">Print summary</button>
+      </div>
+    </section>
+
+    <section class="layout-grid">
+      <form class="input-panel" id="payrollForm">
+        <div class="panel-header">
+          <h2>Inputs</h2>
+          <span>Monthly values in KES</span>
+        </div>
+
+        <details open class="input-group">
+          <summary>Core pay</summary>
+          <div class="field-grid">
+            <label>Basic pay <input data-money id="basicPay" type="text" inputmode="decimal" placeholder="0.00" /></label>
+            <div class="stat-impact-note">Basic pay always forms part of the NSSF, SHIF and AHL base.</div>
+            <div class="earning-line">
+              <label>Recurring allowances <input data-money id="regularAllowances" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles" aria-label="Recurring allowances statutory impact">
+                <span>Affects</span>
+                <label><input type="checkbox" id="regularAllowancesAffectsNssf" checked /> NSSF</label>
+                <label><input type="checkbox" id="regularAllowancesAffectsShif" checked /> SHIF</label>
+                <label><input type="checkbox" id="regularAllowancesAffectsAhl" checked /> AHL</label>
+              </div>
+            </div>
+            <div class="earning-line">
+              <label>One-off allowances <input data-money id="oneOffAllowances" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles" aria-label="One-off allowances statutory impact">
+                <span>Affects</span>
+                <label><input type="checkbox" id="oneOffAllowancesAffectsNssf" /> NSSF</label>
+                <label><input type="checkbox" id="oneOffAllowancesAffectsShif" /> SHIF</label>
+                <label><input type="checkbox" id="oneOffAllowancesAffectsAhl" /> AHL</label>
+              </div>
+            </div>
+            <div class="earning-line">
+              <label>Bonus / commission <input data-money id="bonusPay" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles" aria-label="Bonus statutory impact">
+                <span>Affects</span>
+                <label><input type="checkbox" id="bonusPayAffectsNssf" checked /> NSSF</label>
+                <label><input type="checkbox" id="bonusPayAffectsShif" checked /> SHIF</label>
+                <label><input type="checkbox" id="bonusPayAffectsAhl" checked /> AHL</label>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details open class="input-group">
+          <summary>Cash allowances breakdown</summary>
+          <div class="field-grid two-col">
+            <div class="earning-line">
+              <label>Transport <input data-money id="transportAllowance" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles"><span>Affects</span><label><input type="checkbox" id="transportAllowanceAffectsNssf" checked /> NSSF</label><label><input type="checkbox" id="transportAllowanceAffectsShif" checked /> SHIF</label><label><input type="checkbox" id="transportAllowanceAffectsAhl" checked /> AHL</label></div>
+            </div>
+            <div class="earning-line">
+              <label>House / rent <input data-money id="houseAllowance" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles"><span>Affects</span><label><input type="checkbox" id="houseAllowanceAffectsNssf" checked /> NSSF</label><label><input type="checkbox" id="houseAllowanceAffectsShif" checked /> SHIF</label><label><input type="checkbox" id="houseAllowanceAffectsAhl" checked /> AHL</label></div>
+            </div>
+            <div class="earning-line">
+              <label>Overtime <input data-money id="overtimePay" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles"><span>Affects</span><label><input type="checkbox" id="overtimePayAffectsNssf" /> NSSF</label><label><input type="checkbox" id="overtimePayAffectsShif" /> SHIF</label><label><input type="checkbox" id="overtimePayAffectsAhl" /> AHL</label></div>
+            </div>
+            <div class="earning-line">
+              <label>Other cash allowance <input data-money id="otherCashAllowance" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles"><span>Affects</span><label><input type="checkbox" id="otherCashAllowanceAffectsNssf" checked /> NSSF</label><label><input type="checkbox" id="otherCashAllowanceAffectsShif" checked /> SHIF</label><label><input type="checkbox" id="otherCashAllowanceAffectsAhl" checked /> AHL</label></div>
+            </div>
+          </div>
+        </details>
+
+        <details open class="input-group">
+          <summary>Benefits breakdown</summary>
+          <div class="field-grid two-col">
+            <div class="earning-line">
+              <label>Cash benefits <input data-money id="cashBenefits" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles"><span>Affects</span><label><input type="checkbox" id="cashBenefitsAffectsNssf" checked /> NSSF</label><label><input type="checkbox" id="cashBenefitsAffectsShif" checked /> SHIF</label><label><input type="checkbox" id="cashBenefitsAffectsAhl" checked /> AHL</label></div>
+            </div>
+            <div class="earning-line">
+              <label>Car benefit <input data-money id="carBenefit" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles"><span>Affects</span><label><input type="checkbox" id="carBenefitAffectsNssf" checked /> NSSF</label><label><input type="checkbox" id="carBenefitAffectsShif" checked /> SHIF</label><label><input type="checkbox" id="carBenefitAffectsAhl" checked /> AHL</label></div>
+            </div>
+            <div class="earning-line">
+              <label>Telephone / internet benefit <input data-money id="telephoneBenefit" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles"><span>Affects</span><label><input type="checkbox" id="telephoneBenefitAffectsNssf" checked /> NSSF</label><label><input type="checkbox" id="telephoneBenefitAffectsShif" checked /> SHIF</label><label><input type="checkbox" id="telephoneBenefitAffectsAhl" checked /> AHL</label></div>
+            </div>
+            <div class="earning-line">
+              <label>Meals benefit <input data-money id="mealsBenefit" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles"><span>Affects</span><label><input type="checkbox" id="mealsBenefitAffectsNssf" checked /> NSSF</label><label><input type="checkbox" id="mealsBenefitAffectsShif" checked /> SHIF</label><label><input type="checkbox" id="mealsBenefitAffectsAhl" checked /> AHL</label></div>
+            </div>
+            <div class="earning-line">
+              <label>Other non-cash benefit <input data-money id="otherNonCashBenefit" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles"><span>Affects</span><label><input type="checkbox" id="otherNonCashBenefitAffectsNssf" checked /> NSSF</label><label><input type="checkbox" id="otherNonCashBenefitAffectsShif" checked /> SHIF</label><label><input type="checkbox" id="otherNonCashBenefitAffectsAhl" checked /> AHL</label></div>
+            </div>
+          </div>
+          <p class="hint">Use the NSSF / SHIF / AHL checkboxes to decide whether each earning or benefit should form part of each statutory base. One-off allowances and overtime are off by default.</p>
+        </details>
+
+        <details class="input-group">
+          <summary>Statutory configuration</summary>
+          <div class="field-grid two-col">
+            <label>NSSF rate % <input id="nssfRate" type="number" step="0.01" value="6" /></label>
+            <label>NSSF upper limit <input data-money id="nssfUpperLimit" type="text" value="108,000.00" /></label>
+            <label>SHIF rate % <input id="shifRate" type="number" step="0.01" value="2.75" /></label>
+            <label>SHIF minimum <input data-money id="shifMinimum" type="text" value="300.00" /></label>
+            <label>AHL employee % <input id="ahlEmployeeRate" type="number" step="0.01" value="1.5" /></label>
+            <label>AHL employer % <input id="ahlEmployerRate" type="number" step="0.01" value="1.5" /></label>
+            <label>Personal relief <input data-money id="personalRelief" type="text" value="2,400.00" /></label>
+            <label>NITA employer levy <input data-money id="nitaLevy" type="text" value="50.00" /></label>
+          </div>
+        </details>
+
+        <details class="input-group">
+          <summary>Optional deductions & reliefs</summary>
+          <div class="field-grid two-col">
+            <label>Employee pension % <input id="employeePensionRate" type="number" step="0.01" placeholder="0" /></label>
+            <label>Employer pension % <input id="employerPensionRate" type="number" step="0.01" placeholder="0" /></label>
+            <label>Life insurance premium <input data-money id="lifeInsurance" type="text" placeholder="0.00" /></label>
+            <label>Education insurance premium <input data-money id="educationInsurance" type="text" placeholder="0.00" /></label>
+            <label>Other post-tax deductions <input data-money id="otherDeductions" type="text" placeholder="0.00" /></label>
+            <label>Insurance relief cap <input data-money id="insuranceReliefCap" type="text" value="5,000.00" /></label>
+          </div>
+        </details>
+
+        <details class="input-group">
+          <summary>Benefit thresholds</summary>
+          <div class="field-grid two-col">
+            <label>Telephone threshold <input data-money id="telephoneThreshold" type="text" value="5,000.00" /></label>
+            <label>Meals threshold <input data-money id="mealsThreshold" type="text" value="5,000.00" /></label>
+            <label>Allowable deduction cap <input data-money id="allowableDeductionCap" type="text" value="30,000.00" /></label>
+          </div>
+        </details>
+      </form>
+
+      <aside class="results-panel">
+        <div class="net-card">
+          <span>Estimated net pay</span>
+          <strong id="netPay">KES 0.00</strong>
+          <small id="effectiveTaxRate">Effective PAYE rate: 0.00%</small>
+        </div>
+
+        <div class="summary-cards">
+          <div><span>Gross pay</span><strong id="grossPay">KES 0.00</strong></div>
+          <div><span>Taxable pay</span><strong id="taxablePay">KES 0.00</strong></div>
+          <div><span>PAYE</span><strong id="paye">KES 0.00</strong></div>
+          <div><span>Total deductions</span><strong id="totalDeductions">KES 0.00</strong></div>
+        </div>
+
+        <div class="breakdown-card">
+          <h2>Computation breakdown</h2>
+          <div id="breakdownRows"></div>
+        </div>
+
+        <div class="breakdown-card employer-card">
+          <h2>Employer contributions</h2>
+          <div id="employerRows"></div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
