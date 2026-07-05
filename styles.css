@@ -18,13 +18,16 @@
   --seg-other: #a08a7a;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; min-width: 0; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 body {
   margin: 0;
   min-height: 100vh;
   font-family: 'Outfit', system-ui, sans-serif;
   color: var(--text);
+  overflow-wrap: break-word;
   background:
     radial-gradient(circle at top left, rgba(242, 140, 24, .35), transparent 35%),
     linear-gradient(135deg, #21130b 0%, #3a1d0d 45%, #0f100e 100%);
@@ -41,8 +44,8 @@ abbr[title] {
 svg { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 .app-shell {
-  width: min(1220px, calc(100% - 32px));
-  margin: 32px auto;
+  width: min(1220px, calc(100% - clamp(16px, 5vw, 32px) * 2));
+  margin: clamp(12px, 4vw, 32px) auto;
 }
 
 .hero-card,
@@ -58,12 +61,12 @@ svg { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; s
 .hero-card {
   display: flex;
   justify-content: space-between;
-  gap: 24px;
+  gap: clamp(16px, 4vw, 24px);
   align-items: center;
-  padding: 28px;
-  border-radius: 28px;
+  padding: clamp(18px, 4vw, 28px);
+  border-radius: clamp(18px, 4vw, 28px);
   background: linear-gradient(135deg, rgba(255,248,238,.96), rgba(255,255,255,.9));
-  margin-bottom: 22px;
+  margin-bottom: clamp(14px, 3vw, 22px);
 }
 
 .eyebrow {
@@ -74,8 +77,8 @@ svg { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; s
   color: var(--brand-dark);
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: .12em;
-  font-size: .78rem;
+  letter-spacing: .1em;
+  font-size: clamp(.68rem, 1.6vw, .78rem);
 }
 
 .eyebrow-dot {
@@ -90,30 +93,33 @@ h1, h2 { margin: 0; }
 
 h1 {
   max-width: 760px;
-  font-size: clamp(2rem, 4vw, 4.3rem);
-  line-height: .95;
-  letter-spacing: -0.055em;
+  font-size: clamp(1.7rem, 6vw, 4.3rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
 }
 
 .hero-copy {
-  margin: 14px 0 0;
+  margin: clamp(10px, 2vw, 14px) 0 0;
   max-width: 720px;
   color: var(--muted);
-  font-size: 1.05rem;
+  font-size: clamp(.88rem, 2vw, 1.05rem);
 }
 
-.hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .primary-button,
 .ghost-button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   border: 0;
   border-radius: 999px;
-  padding: 12px 20px;
+  padding: clamp(10px, 2.4vw, 12px) clamp(14px, 3vw, 20px);
   cursor: pointer;
   font-weight: 800;
+  font-size: clamp(.86rem, 2vw, 1rem);
+  white-space: nowrap;
   transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease;
 }
 
