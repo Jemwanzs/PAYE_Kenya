@@ -152,12 +152,15 @@ function calculate() {
         .join('')
     : '<div class="legend-item">Enter pay details to see the breakdown.</div>';
 
-  document.getElementById('breakdownRows').innerHTML = [
+  document.getElementById('earningsRows').innerHTML = [
     row('Basic pay', basicPay),
     row('Direct allowances', directAllowances),
     row('Cash allowances breakdown total', cashAllowances),
     row('Taxable benefits used', taxableBenefits),
-    row('Gross pay displayed', displayGross, true),
+    row('Gross pay displayed', displayGross, true)
+  ].join('');
+
+  document.getElementById('deductionsRows').innerHTML = [
     row('NSSF base selected', nssfBase),
     row('SHIF base selected', shifBase),
     row('AHL base selected', ahlBase),
@@ -172,9 +175,10 @@ function calculate() {
     row('Insurance relief', insuranceRelief),
     row('PAYE payable', paye, true),
     row('Insurance premiums deducted', insurancePremiums),
-    row('Other deductions', otherDeductions),
-    row('Net pay', netPay, true)
+    row('Other deductions', otherDeductions)
   ].join('');
+
+  document.getElementById('netPayRow').innerHTML = row('Net pay', netPay, true);
 
   document.getElementById('employerRows').innerHTML = [
     row('NSSF employer', nssfEmployer),

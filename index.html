@@ -29,6 +29,8 @@
       </div>
     </section>
 
+    <p class="credit-line">Built by <strong>James Sammy</strong> &mdash; contact <a href="tel:+254798993404">+254 798 993 404</a> for HRMIS solutions, product development, QA &amp; feature scoping.</p>
+
     <section class="layout-grid">
       <form class="input-panel" id="payrollForm">
         <div class="panel-header">
@@ -201,7 +203,17 @@
 
         <div class="breakdown-card breakdown-computation">
           <h2>Computation breakdown</h2>
-          <div id="breakdownRows"></div>
+          <div class="breakdown-columns">
+            <div class="breakdown-col">
+              <h3>Earnings</h3>
+              <div id="earningsRows"></div>
+            </div>
+            <div class="breakdown-col">
+              <h3>Deductions</h3>
+              <div id="deductionsRows"></div>
+            </div>
+          </div>
+          <div class="breakdown-net" id="netPayRow"></div>
         </div>
 
         <div class="breakdown-card employer-card">
@@ -210,10 +222,6 @@
         </div>
       </aside>
     </section>
-
-    <footer class="app-footer">
-      <p>Built by <strong>James Sammy</strong> &mdash; contact <a href="tel:+254798993404">+254 798 993 404</a> for HRMIS solutions, product development, QA, and product feature scoping &amp; definition.</p>
-    </footer>
   </main>
 
   <div class="mobile-sticky-summary" id="mobileStickySummary">
