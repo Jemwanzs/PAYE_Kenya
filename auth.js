@@ -2,8 +2,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // Public by design — Row Level Security on the `profiles` table is what
 // actually restricts access, not secrecy of these values.
-const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_PUBLIC_KEY';
+const SUPABASE_URL = 'https://puxsrbukdsywxuaxeeom.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_40HuQHNxiEA06Aw26di1BQ_C1oK6RU1';
 
 if (SUPABASE_URL.startsWith('YOUR_') || SUPABASE_ANON_KEY.startsWith('YOUR_')) {
   const authScreen = document.getElementById('authScreen');
