@@ -18,11 +18,17 @@
         <p class="hero-copy">Configure <abbr title="National Social Security Fund">NSSF</abbr>, <abbr title="Social Health Insurance Fund">SHIF</abbr>, <abbr title="Affordable Housing Levy">AHL</abbr>, allowances, benefits, pension and insurance reliefs in one clean payroll simulation.</p>
       </div>
       <div class="hero-actions">
-        <button type="button" class="ghost-button" id="resetBtn">
+        <button type="button" class="ghost-button" id="manageBillingBtn" hidden>
+          Manage billing
+        </button>
+        <button type="button" class="ghost-button" id="logoutBtn" hidden>
+          Log out
+        </button>
+        <button type="button" class="ghost-button" id="resetBtn" hidden>
           <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
           Reset
         </button>
-        <button type="button" class="primary-button" id="printBtn">
+        <button type="button" class="primary-button" id="printBtn" hidden>
           <svg viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 17v4h12v-4"/></svg>
           Print summary
         </button>
@@ -31,7 +37,45 @@
 
     <p class="credit-line">Built by <strong>James Sammy</strong> &mdash; contact <a href="tel:+254798993404">+254 798 993 404</a> for HRMIS solutions, product development, QA &amp; feature scoping.</p>
 
-    <section class="layout-grid">
+    <section class="hero-card auth-card" id="authScreen" hidden>
+      <div>
+        <p class="eyebrow"><span class="eyebrow-dot"></span>Account</p>
+        <h1>Sign in to use the calculator</h1>
+        <p class="hero-copy">Create a free account to start your 7-day trial &mdash; no card required to try it out.</p>
+      </div>
+      <form class="auth-form" id="authForm">
+        <label>Email <input type="email" id="authEmail" required autocomplete="email" /></label>
+        <label>Password <input type="password" id="authPassword" required minlength="6" autocomplete="current-password" /></label>
+        <p class="auth-error" id="authError" hidden></p>
+        <div class="auth-actions">
+          <button type="submit" class="primary-button" id="authSubmitBtn" data-mode="signup">Sign up</button>
+          <button type="button" class="ghost-button" id="authToggleBtn">Have an account? Log in</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="hero-card" id="finalizingScreen" hidden>
+      <div>
+        <p class="eyebrow"><span class="eyebrow-dot"></span>Almost there</p>
+        <h1>Finalizing your subscription&hellip;</h1>
+        <p class="hero-copy">This usually takes a few seconds.</p>
+      </div>
+    </section>
+
+    <section class="hero-card paywall-card" id="paywallScreen" hidden>
+      <div>
+        <p class="eyebrow"><span class="eyebrow-dot"></span>Subscription required</p>
+        <h1>Your free trial has ended</h1>
+        <p class="hero-copy">Subscribe to keep using the PAYE calculator &mdash; billed in KES via Paystack (card or M-Pesa).</p>
+      </div>
+      <div class="hero-actions">
+        <button type="button" class="primary-button" id="subscribeBtn">Subscribe</button>
+      </div>
+    </section>
+
+    <div class="trial-banner" id="trialBanner" hidden></div>
+
+    <section class="layout-grid" id="calculatorGate" hidden>
       <form class="input-panel" id="payrollForm">
         <div class="panel-header">
           <h2>Inputs</h2>
@@ -230,5 +274,6 @@
   </div>
 
   <script src="script.js"></script>
+  <script type="module" src="auth.js"></script>
 </body>
 </html>

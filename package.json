@@ -1,0 +1,9 @@
+{
+  "name": "paye-calc-kenya",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Kenya PAYE & tax calculator with subscription access via Supabase + Paystack",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}

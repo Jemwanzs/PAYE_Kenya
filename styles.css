@@ -20,6 +20,11 @@
 
 * { box-sizing: border-box; min-width: 0; }
 
+/* Author rules like .hero-card{display:flex} otherwise beat the UA [hidden]
+   default regardless of source order, since author CSS always wins over UA
+   CSS in the cascade. */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 body {
@@ -328,6 +333,30 @@ input:focus {
 }
 
 .hint { font-size: .82rem; margin-bottom: 0; }
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 4px;
+  width: 100%;
+  max-width: 360px;
+}
+
+.auth-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.auth-error { margin: 0; color: #b3261e; font-size: .85rem; font-weight: 600; }
+
+.trial-banner {
+  margin-bottom: clamp(6px, 1.5vw, 10px);
+  padding: 10px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(242, 140, 24, .15);
+  color: var(--brand-dark);
+  font-weight: 700;
+  font-size: .85rem;
+  text-align: center;
+}
 
 .net-card {
   border-radius: 24px;
