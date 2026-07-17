@@ -12,6 +12,8 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  const appUrl = process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+
   try {
     const paystackRes = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
@@ -22,7 +24,7 @@ module.exports = async function handler(req, res) {
       body: JSON.stringify({
         email: user.email,
         plan: process.env.PAYSTACK_PLAN_CODE,
-        callback_url: `${process.env.APP_URL}/?checkout=complete`,
+        callback_url: `${appUrl}/?checkout=complete`,
         metadata: { supabase_user_id: user.id }
       })
     });
