@@ -5,6 +5,7 @@ create table public.profiles (
   email              text,
   trial_started_at   timestamptz not null default now(),
   access_expires_at  timestamptz,
+  is_admin           boolean not null default false,
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );

@@ -76,6 +76,10 @@ function showScreen(name) {
 }
 
 function computeAccess(profile) {
+  if (profile.is_admin) {
+    return { hasAccess: true, isAdmin: true, inTrial: false, hasPaidAccess: false, trialDaysLeft: 0, paidDaysLeft: 0 };
+  }
+
   const now = Date.now();
   const trialEndsAt = new Date(profile.trial_started_at).getTime() + TRIAL_DAYS * DAY_MS;
   const paidUntil = profile.access_expires_at ? new Date(profile.access_expires_at).getTime() : 0;
@@ -83,7 +87,7 @@ function computeAccess(profile) {
   const hasPaidAccess = now < paidUntil;
   const trialDaysLeft = Math.max(0, Math.ceil((trialEndsAt - now) / DAY_MS));
   const paidDaysLeft = Math.max(0, Math.ceil((paidUntil - now) / DAY_MS));
-  return { hasAccess: inTrial || hasPaidAccess, inTrial, hasPaidAccess, trialDaysLeft, paidDaysLeft };
+  return { hasAccess: inTrial || hasPaidAccess, isAdmin: false, inTrial, hasPaidAccess, trialDaysLeft, paidDaysLeft };
 }
 
 async function fetchProfile() {
@@ -132,9 +136,12 @@ function setPurchaseOverlay(show, { forced = false } = {}) {
 function renderAccess(access) {
   resetBtn.hidden = !access.hasAccess;
   printBtn.hidden = !access.hasAccess;
-  buyMoreBtn.hidden = false;
+  buyMoreBtn.hidden = access.isAdmin;
 
-  if (access.inTrial) {
+  if (access.isAdmin) {
+    accessBanner.hidden = false;
+    accessBanner.textContent = 'Admin access';
+  } else if (access.inTrial) {
     accessBanner.hidden = false;
     accessBanner.textContent = `Trial: ${access.trialDaysLeft} day${access.trialDaysLeft === 1 ? '' : 's'} left`;
   } else if (access.hasPaidAccess) {
