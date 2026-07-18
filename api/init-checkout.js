@@ -1,4 +1,5 @@
 const { getAuthenticatedUser } = require('./_supabaseAdmin');
+const { amountForDays } = require('./_dayPackages');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -9,6 +10,13 @@ module.exports = async function handler(req, res) {
   const user = await getAuthenticatedUser(req);
   if (!user) {
     res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const days = Number(req.body?.days);
+  const amount = amountForDays(days);
+  if (!amount) {
+    res.status(400).json({ error: 'Invalid package selected' });
     return;
   }
 
@@ -23,9 +31,10 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify({
         email: user.email,
-        plan: process.env.PAYSTACK_PLAN_CODE,
+        amount: amount * 100,
+        currency: 'KES',
         callback_url: `${appUrl}/?checkout=complete`,
-        metadata: { supabase_user_id: user.id }
+        metadata: { supabase_user_id: user.id, days }
       })
     });
 

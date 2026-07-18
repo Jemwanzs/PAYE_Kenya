@@ -1,16 +1,12 @@
 -- Run once in the Supabase SQL Editor for this project.
 
 create table public.profiles (
-  id                          uuid primary key references auth.users(id) on delete cascade,
-  email                       text,
-  trial_started_at           timestamptz not null default now(),
-  subscription_status        text not null default 'none'
-                               check (subscription_status in
-                                 ('none', 'active', 'non-renewing', 'attention', 'completed', 'cancelled')),
-  paystack_customer_code     text unique,
-  paystack_subscription_code text unique,
-  created_at                 timestamptz not null default now(),
-  updated_at                 timestamptz not null default now()
+  id                 uuid primary key references auth.users(id) on delete cascade,
+  email              text,
+  trial_started_at   timestamptz not null default now(),
+  access_expires_at  timestamptz,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
 );
 
 alter table public.profiles enable row level security;
@@ -31,8 +27,8 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.profiles (id, email, trial_started_at, subscription_status)
-  values (new.id, new.email, now(), 'none');
+  insert into public.profiles (id, email, trial_started_at)
+  values (new.id, new.email, now());
   return new;
 end;
 $$;

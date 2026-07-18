@@ -18,8 +18,8 @@
         <p class="hero-copy">Configure <abbr title="National Social Security Fund">NSSF</abbr>, <abbr title="Social Health Insurance Fund">SHIF</abbr>, <abbr title="Affordable Housing Levy">AHL</abbr>, allowances, benefits, pension and insurance reliefs in one clean payroll simulation.</p>
       </div>
       <div class="hero-actions">
-        <button type="button" class="ghost-button" id="manageBillingBtn" hidden>
-          Manage billing
+        <button type="button" class="ghost-button" id="buyMoreBtn" hidden>
+          Buy more time
         </button>
         <button type="button" class="ghost-button" id="logoutBtn" hidden>
           Log out
@@ -93,18 +93,7 @@
       </div>
     </section>
 
-    <section class="hero-card paywall-card" id="paywallScreen" hidden>
-      <div>
-        <p class="eyebrow"><span class="eyebrow-dot"></span>Subscription required</p>
-        <h1>Your free trial has ended</h1>
-        <p class="hero-copy">Subscribe to keep using the PAYE calculator &mdash; billed in KES via Paystack (card or M-Pesa).</p>
-      </div>
-      <div class="hero-actions">
-        <button type="button" class="primary-button" id="subscribeBtn">Subscribe</button>
-      </div>
-    </section>
-
-    <div class="trial-banner" id="trialBanner" hidden></div>
+    <div class="access-banner" id="accessBanner" hidden></div>
 
     <section class="layout-grid" id="calculatorGate" hidden>
       <form class="input-panel" id="payrollForm">
@@ -320,6 +309,17 @@
       </aside>
     </section>
   </main>
+
+  <div class="purchase-overlay" id="purchaseOverlay" hidden>
+    <div class="purchase-modal">
+      <button type="button" class="modal-close" id="purchaseCloseBtn" aria-label="Close" hidden>&times;</button>
+      <p class="eyebrow"><span class="eyebrow-dot"></span>Get access</p>
+      <h2 id="purchaseTitle">Your free trial has ended</h2>
+      <p class="hero-copy" id="purchaseSubtitle">Buy a day-pass to keep using the calculator &mdash; billed in KES via Paystack (card or M-Pesa).</p>
+      <div class="package-grid" id="packageGrid"></div>
+      <p class="auth-error" id="purchaseError" hidden></p>
+    </div>
+  </div>
 
   <div class="mobile-sticky-summary" id="mobileStickySummary">
     <span>Net pay</span>

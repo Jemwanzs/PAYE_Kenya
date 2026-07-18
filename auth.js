@@ -18,22 +18,39 @@ if (SUPABASE_URL.startsWith('YOUR_') || SUPABASE_ANON_KEY.startsWith('YOUR_')) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const TRIAL_DAYS = 7;
-const PAID_STATUSES = ['active', 'non-renewing', 'attention'];
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Keep in sync with the authoritative price list in api/_dayPackages.js.
+const DAY_PACKAGES = [
+  { days: 1, amount: 200 },
+  { days: 2, amount: 400 },
+  { days: 3, amount: 500 },
+  { days: 4, amount: 600 },
+  { days: 5, amount: 700 },
+  { days: 15, amount: 1500 },
+  { days: 30, amount: 2800 },
+  { days: 90, amount: 8000 },
+  { days: 180, amount: 15000 },
+  { days: 365, amount: 28000 }
+];
+
+function packageLabel(days) {
+  if (days === 180) return '6 months';
+  if (days === 365) return '12 months';
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
 
 const screens = {
   auth: document.getElementById('authScreen'),
   recovery: document.getElementById('recoveryScreen'),
   finalizing: document.getElementById('finalizingScreen'),
-  paywall: document.getElementById('paywallScreen'),
   calculator: document.getElementById('calculatorGate')
 };
-const trialBanner = document.getElementById('trialBanner');
-const manageBillingBtn = document.getElementById('manageBillingBtn');
+const accessBanner = document.getElementById('accessBanner');
+const buyMoreBtn = document.getElementById('buyMoreBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const resetBtn = document.getElementById('resetBtn');
 const printBtn = document.getElementById('printBtn');
-const subscribeBtn = document.getElementById('subscribeBtn');
 const authForm = document.getElementById('authForm');
 const authToggleBtn = document.getElementById('authToggleBtn');
 const authSubmitBtn = document.getElementById('authSubmitBtn');
@@ -42,6 +59,13 @@ const authInfo = document.getElementById('authInfo');
 const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
 const recoveryForm = document.getElementById('recoveryForm');
 const recoveryError = document.getElementById('recoveryError');
+const calculatorGate = document.getElementById('calculatorGate');
+const purchaseOverlay = document.getElementById('purchaseOverlay');
+const purchaseCloseBtn = document.getElementById('purchaseCloseBtn');
+const purchaseTitle = document.getElementById('purchaseTitle');
+const purchaseSubtitle = document.getElementById('purchaseSubtitle');
+const purchaseError = document.getElementById('purchaseError');
+const packageGrid = document.getElementById('packageGrid');
 
 let inRecovery = false;
 
@@ -52,11 +76,14 @@ function showScreen(name) {
 }
 
 function computeAccess(profile) {
-  const hasPaidAccess = PAID_STATUSES.includes(profile.subscription_status);
+  const now = Date.now();
   const trialEndsAt = new Date(profile.trial_started_at).getTime() + TRIAL_DAYS * DAY_MS;
-  const inTrial = profile.subscription_status === 'none' && Date.now() < trialEndsAt;
-  const daysLeft = Math.max(0, Math.ceil((trialEndsAt - Date.now()) / DAY_MS));
-  return { hasAccess: hasPaidAccess || inTrial, hasPaidAccess, inTrial, daysLeft };
+  const paidUntil = profile.access_expires_at ? new Date(profile.access_expires_at).getTime() : 0;
+  const inTrial = now < trialEndsAt;
+  const hasPaidAccess = now < paidUntil;
+  const trialDaysLeft = Math.max(0, Math.ceil((trialEndsAt - now) / DAY_MS));
+  const paidDaysLeft = Math.max(0, Math.ceil((paidUntil - now) / DAY_MS));
+  return { hasAccess: inTrial || hasPaidAccess, inTrial, hasPaidAccess, trialDaysLeft, paidDaysLeft };
 }
 
 async function fetchProfile() {
@@ -65,12 +92,16 @@ async function fetchProfile() {
   return data;
 }
 
-async function callFunction(path) {
+async function callFunction(path, body) {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   const res = await fetch(path, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` }
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body ? { 'Content-Type': 'application/json' } : {})
+    },
+    body: body ? JSON.stringify(body) : undefined
   });
   if (!res.ok) throw new Error('Request failed');
   return res.json();
@@ -86,25 +117,36 @@ async function pollForAccess(attempts = 5, delayMs = 1500) {
   return null;
 }
 
+function setPurchaseOverlay(show, { forced = false } = {}) {
+  purchaseOverlay.hidden = !show;
+  purchaseCloseBtn.hidden = forced;
+  if (show) {
+    purchaseError.hidden = true;
+    purchaseTitle.textContent = forced ? 'Your access has ended' : 'Buy more time';
+    purchaseSubtitle.textContent = forced
+      ? 'Buy a day-pass to keep using the calculator — billed in KES via Paystack (card or M-Pesa).'
+      : 'Top up before your current access runs out — billed in KES via Paystack (card or M-Pesa).';
+  }
+}
+
 function renderAccess(access) {
-  manageBillingBtn.hidden = !access.hasPaidAccess;
   resetBtn.hidden = !access.hasAccess;
   printBtn.hidden = !access.hasAccess;
-
-  if (!access.hasAccess) {
-    trialBanner.hidden = true;
-    showScreen('paywall');
-    return;
-  }
+  buyMoreBtn.hidden = false;
 
   if (access.inTrial) {
-    trialBanner.hidden = false;
-    trialBanner.textContent = `Trial: ${access.daysLeft} day${access.daysLeft === 1 ? '' : 's'} left`;
+    accessBanner.hidden = false;
+    accessBanner.textContent = `Trial: ${access.trialDaysLeft} day${access.trialDaysLeft === 1 ? '' : 's'} left`;
+  } else if (access.hasPaidAccess) {
+    accessBanner.hidden = false;
+    accessBanner.textContent = `Access active: ${access.paidDaysLeft} day${access.paidDaysLeft === 1 ? '' : 's'} left`;
   } else {
-    trialBanner.hidden = true;
+    accessBanner.hidden = true;
   }
 
   showScreen('calculator');
+  calculatorGate.classList.toggle('blurred', !access.hasAccess);
+  setPurchaseOverlay(!access.hasAccess, { forced: !access.hasAccess });
 }
 
 async function renderForSession() {
@@ -112,10 +154,11 @@ async function renderForSession() {
 
   if (!session) {
     logoutBtn.hidden = true;
-    manageBillingBtn.hidden = true;
     resetBtn.hidden = true;
     printBtn.hidden = true;
-    trialBanner.hidden = true;
+    buyMoreBtn.hidden = true;
+    accessBanner.hidden = true;
+    setPurchaseOverlay(false);
     showScreen('auth');
     return;
   }
@@ -136,6 +179,36 @@ async function renderForSession() {
   const profile = await fetchProfile();
   renderAccess(computeAccess(profile));
 }
+
+packageGrid.innerHTML = DAY_PACKAGES.map(pack => `
+  <button type="button" class="package-btn" data-days="${pack.days}">
+    <span class="package-days">${packageLabel(pack.days)}</span>
+    <span class="package-amount">KES ${pack.amount.toLocaleString('en-KE')}</span>
+    <span class="package-rate">≈ KES ${Math.round(pack.amount / pack.days).toLocaleString('en-KE')}/day</span>
+  </button>
+`).join('');
+
+packageGrid.addEventListener('click', async event => {
+  const btn = event.target.closest('.package-btn');
+  if (!btn) return;
+
+  const days = Number(btn.dataset.days);
+  purchaseError.hidden = true;
+  const allButtons = [...packageGrid.querySelectorAll('button')];
+  allButtons.forEach(b => { b.disabled = true; });
+
+  try {
+    const { url } = await callFunction('/api/init-checkout', { days });
+    location.href = url;
+  } catch {
+    purchaseError.textContent = 'Could not start checkout. Please try again.';
+    purchaseError.hidden = false;
+    allButtons.forEach(b => { b.disabled = false; });
+  }
+});
+
+buyMoreBtn.addEventListener('click', () => setPurchaseOverlay(true, { forced: false }));
+purchaseCloseBtn.addEventListener('click', () => setPurchaseOverlay(false));
 
 document.querySelectorAll('.password-toggle').forEach(btn => {
   const input = document.getElementById(btn.dataset.toggleFor);
@@ -224,34 +297,6 @@ authToggleBtn.addEventListener('click', () => {
 logoutBtn.addEventListener('click', async () => {
   await supabase.auth.signOut();
   renderForSession();
-});
-
-subscribeBtn.addEventListener('click', async () => {
-  subscribeBtn.disabled = true;
-  try {
-    const { url } = await callFunction('/api/init-subscription');
-    location.href = url;
-  } catch {
-    alert('Could not start checkout. Please try again.');
-    subscribeBtn.disabled = false;
-  }
-});
-
-manageBillingBtn.addEventListener('click', async () => {
-  manageBillingBtn.disabled = true;
-  try {
-    const result = await callFunction('/api/manage-subscription');
-    if (result.url) {
-      location.href = result.url;
-    } else if (result.cancelled) {
-      alert('Your subscription has been cancelled.');
-      renderForSession();
-    }
-  } catch {
-    alert('Could not open billing management. Please try again.');
-  } finally {
-    manageBillingBtn.disabled = false;
-  }
 });
 
 supabase.auth.onAuthStateChange(event => {

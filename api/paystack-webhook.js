@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { supabaseAdmin } = require('./_supabaseAdmin');
+const { amountForDays, DAY_MS } = require('./_dayPackages');
 
 module.exports.config = { api: { bodyParser: false } };
 
@@ -12,23 +13,21 @@ function readRawBody(req) {
   });
 }
 
-function statusForEvent(eventName, data) {
-  if (eventName === 'charge.success' || eventName === 'subscription.create') return 'active';
-  if (eventName === 'subscription.not_renew') return 'non-renewing';
-  if (eventName === 'subscription.disable') return 'cancelled';
-  if (eventName === 'invoice.payment_failed') return 'attention';
-  return null;
-}
+async function extendAccess({ supabaseUserId, email, days }) {
+  let selectQuery = supabaseAdmin.from('profiles').select('access_expires_at');
+  selectQuery = supabaseUserId ? selectQuery.eq('id', supabaseUserId) : selectQuery.eq('email', email);
+  const { data: profile, error: fetchError } = await selectQuery.single();
+  if (fetchError) throw fetchError;
 
-async function upsertProfile({ supabaseUserId, email, customerCode, subscriptionCode, status }) {
-  const update = { updated_at: new Date().toISOString() };
-  if (customerCode) update.paystack_customer_code = customerCode;
-  if (subscriptionCode) update.paystack_subscription_code = subscriptionCode;
-  if (status) update.subscription_status = status;
+  const now = Date.now();
+  const currentExpiry = profile?.access_expires_at ? new Date(profile.access_expires_at).getTime() : 0;
+  const newExpiry = new Date(Math.max(currentExpiry, now) + days * DAY_MS).toISOString();
 
-  let query = supabaseAdmin.from('profiles').update(update);
-  query = supabaseUserId ? query.eq('id', supabaseUserId) : query.eq('email', email);
-  const { error } = await query;
+  let updateQuery = supabaseAdmin
+    .from('profiles')
+    .update({ access_expires_at: newExpiry, updated_at: new Date().toISOString() });
+  updateQuery = supabaseUserId ? updateQuery.eq('id', supabaseUserId) : updateQuery.eq('email', email);
+  const { error } = await updateQuery;
   if (error) throw error;
 }
 
@@ -58,23 +57,29 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const eventName = event.event;
-  const data = event.data || {};
-  const status = statusForEvent(eventName, data);
+  if (event.event !== 'charge.success') {
+    res.status(200).json({ received: true });
+    return;
+  }
 
-  if (status) {
-    try {
-      await upsertProfile({
-        supabaseUserId: data.metadata?.supabase_user_id || data.plan_object?.metadata?.supabase_user_id,
-        email: data.customer?.email,
-        customerCode: data.customer?.customer_code,
-        subscriptionCode: data.subscription_code,
-        status
-      });
-    } catch (err) {
-      res.status(500).json({ error: 'Failed to sync subscription status' });
-      return;
-    }
+  const data = event.data || {};
+  const days = Number(data.metadata?.days);
+  const expectedAmount = amountForDays(days);
+
+  if (!expectedAmount || data.amount !== expectedAmount * 100) {
+    res.status(400).json({ error: 'Amount/package mismatch' });
+    return;
+  }
+
+  try {
+    await extendAccess({
+      supabaseUserId: data.metadata?.supabase_user_id,
+      email: data.customer?.email,
+      days
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to extend access' });
+    return;
   }
 
   res.status(200).json({ received: true });

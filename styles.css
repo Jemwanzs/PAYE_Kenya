@@ -415,7 +415,7 @@ input:focus {
 }
 .classification-row .hint { margin-top: 2px; }
 
-.trial-banner {
+.access-banner {
   margin-bottom: clamp(6px, 1.5vw, 10px);
   padding: 10px 18px;
   border-radius: 14px;
@@ -426,6 +426,81 @@ input:focus {
   font-size: .85rem;
   text-align: center;
 }
+
+.blurred {
+  filter: blur(6px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.purchase-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(16, 8, 3, .55);
+  backdrop-filter: blur(2px);
+}
+
+.purchase-modal {
+  position: relative;
+  width: 100%;
+  max-width: 620px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  background: var(--card, #fdf6ec);
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  padding: clamp(20px, 4vw, 32px);
+  box-shadow: 0 30px 60px rgba(16, 8, 3, .35);
+}
+
+.modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--brand-dark);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-close:hover { background: rgba(242, 140, 24, .12); }
+
+.package-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.package-btn {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 10px;
+  background: #fffaf3;
+  cursor: pointer;
+  text-align: center;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.package-btn:hover { border-color: var(--brand); transform: translateY(-2px); box-shadow: 0 8px 18px rgba(16, 8, 3, .14); }
+.package-btn:disabled { opacity: .6; cursor: default; transform: none; box-shadow: none; }
+
+.package-days { font-weight: 800; font-size: .95rem; color: var(--text); }
+.package-amount { font-weight: 700; color: var(--brand-dark); }
+.package-rate { font-size: .72rem; color: #8a7264; }
 
 .net-card {
   border-radius: 24px;
