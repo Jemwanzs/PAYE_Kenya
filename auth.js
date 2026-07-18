@@ -259,6 +259,14 @@ recoveryForm.addEventListener('submit', async event => {
   recoveryError.hidden = true;
 
   const password = document.getElementById('recoveryPassword').value;
+  const passwordConfirm = document.getElementById('recoveryPasswordConfirm').value;
+
+  if (password !== passwordConfirm) {
+    recoveryError.textContent = 'Passwords do not match.';
+    recoveryError.hidden = false;
+    return;
+  }
+
   const { error } = await supabase.auth.updateUser({ password });
 
   if (error) {

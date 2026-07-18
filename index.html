@@ -78,6 +78,14 @@
             </button>
           </div>
         </label>
+        <label>Confirm new password
+          <div class="password-field">
+            <input type="password" id="recoveryPasswordConfirm" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="password-toggle" data-toggle-for="recoveryPasswordConfirm" aria-label="Show password">
+              <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </label>
         <p class="auth-error" id="recoveryError" hidden></p>
         <div class="auth-actions">
           <button type="submit" class="primary-button" id="recoverySubmitBtn">Update password</button>
