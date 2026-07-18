@@ -22,8 +22,16 @@ const ids = [
   ...earningComponents.flatMap(item => [`${item.id}AffectsNssf`, `${item.id}AffectsShif`, `${item.id}AffectsAhl`]),
   'nssfRate','nssfUpperLimit','shifRate','shifMinimum','ahlEmployeeRate','ahlEmployerRate','personalRelief','nitaLevy',
   'employeePensionRate','employerPensionRate','lifeInsurance','educationInsurance','otherDeductions','insuranceReliefCap',
-  'telephoneThreshold','mealsThreshold','allowableDeductionCap'
+  'telephoneThreshold','mealsThreshold','allowableDeductionCap',
+  'employeeClassification','secondaryFlatRate','contractorWhtRate','pwdExemption'
 ];
+
+const classificationHints = {
+  primary: 'Primary employee: standard PAYE bands, all statutory deductions and reliefs apply as configured below.',
+  secondary: 'Secondary employee: NSSF (employee and employer) is nil. SHIF and AHL remain allowable deductions, pension is not allowable. PAYE is charged at the flat rate below on the resulting taxable amount — no personal or insurance relief applies.',
+  contractor: 'Contractor: no NSSF, SHIF, AHL, pension or reliefs apply. Withholding tax is charged at the flat rate below on total gross pay.',
+  pwd: 'Person with disability: taxed as a Primary Employee, except the exempt amount below is deducted from taxable pay before the standard PAYE bands apply.'
+};
 
 const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
 
@@ -78,6 +86,13 @@ function statBase(statKey, componentValues, basicPay) {
 }
 
 function calculate() {
+  const classification = el.employeeClassification.value;
+  const isSecondary = classification === 'secondary';
+  const isContractor = classification === 'contractor';
+  const isPwd = classification === 'pwd';
+
+  document.getElementById('classificationHint').textContent = classificationHints[classification] || classificationHints.primary;
+
   const basicPay = toNumber(el.basicPay.value);
   const values = Object.fromEntries(earningComponents.map(item => [item.id, toNumber(el[item.id].value)]));
 
@@ -92,29 +107,48 @@ function calculate() {
   const shifBase = statBase('Shif', values, basicPay);
   const ahlBase = statBase('Ahl', values, basicPay);
 
-  const nssfEmployee = Math.min(nssfBase, toNumber(el.nssfUpperLimit.value)) * percentValue(el.nssfRate);
+  const nssfEmployee = (isSecondary || isContractor) ? 0 : Math.min(nssfBase, toNumber(el.nssfUpperLimit.value)) * percentValue(el.nssfRate);
   const nssfEmployer = nssfEmployee;
-  const shif = shifBase > 0 ? Math.max(shifBase * percentValue(el.shifRate), toNumber(el.shifMinimum.value)) : 0;
-  const ahlEmployee = ahlBase * percentValue(el.ahlEmployeeRate);
-  const ahlEmployer = ahlBase * percentValue(el.ahlEmployerRate);
+  const shif = isContractor ? 0 : (shifBase > 0 ? Math.max(shifBase * percentValue(el.shifRate), toNumber(el.shifMinimum.value)) : 0);
+  const ahlEmployee = isContractor ? 0 : ahlBase * percentValue(el.ahlEmployeeRate);
+  const ahlEmployer = isContractor ? 0 : ahlBase * percentValue(el.ahlEmployerRate);
 
-  const employeePension = basicPay * percentValue(el.employeePensionRate);
-  const employerPension = basicPay * percentValue(el.employerPensionRate);
+  const employeePension = isContractor ? 0 : basicPay * percentValue(el.employeePensionRate);
+  const employerPension = isContractor ? 0 : basicPay * percentValue(el.employerPensionRate);
   const allowableDeductionCap = toNumber(el.allowableDeductionCap.value);
-  const nssfPensionAllowable = Math.min(nssfEmployee + employeePension, allowableDeductionCap);
-  const totalTaxAllowableDeductions = nssfPensionAllowable + shif + ahlEmployee;
+  const nssfPensionAllowable = (isSecondary || isContractor) ? 0 : Math.min(nssfEmployee + employeePension, allowableDeductionCap);
+  const totalTaxAllowableDeductions = isContractor ? 0 : (nssfPensionAllowable + shif + ahlEmployee);
 
   const taxableTelephone = values.telephoneBenefit <= toNumber(el.telephoneThreshold.value) ? 0 : values.telephoneBenefit;
   const taxableMeals = values.mealsBenefit <= toNumber(el.mealsThreshold.value) ? 0 : values.mealsBenefit;
   const taxableBenefits = values.cashBenefits + values.carBenefit + taxableTelephone + taxableMeals + values.otherNonCashBenefit;
   const taxableCashEarnings = basicPay + directAllowances + cashAllowances;
   const excessEmployerPension = Math.max((employerPension + nssfEmployer) - allowableDeductionCap, 0);
-  const taxablePay = Math.max(taxableCashEarnings + taxableBenefits + excessEmployerPension - totalTaxAllowableDeductions, 0);
 
-  const incomeTax = progressiveTax(taxablePay);
   const insurancePremiums = toNumber(el.lifeInsurance.value) + toNumber(el.educationInsurance.value);
-  const insuranceRelief = Math.min(insurancePremiums * 0.15, toNumber(el.insuranceReliefCap.value));
-  const paye = Math.max(incomeTax - toNumber(el.personalRelief.value) - insuranceRelief, 0);
+
+  let taxablePay;
+  let incomeTax;
+  let insuranceRelief = 0;
+  let paye;
+
+  if (isContractor) {
+    taxablePay = displayGross;
+    incomeTax = displayGross * percentValue(el.contractorWhtRate);
+    paye = incomeTax;
+  } else {
+    taxablePay = Math.max(taxableCashEarnings + taxableBenefits + excessEmployerPension - totalTaxAllowableDeductions, 0);
+
+    if (isSecondary) {
+      incomeTax = taxablePay * percentValue(el.secondaryFlatRate);
+      paye = incomeTax;
+    } else {
+      const exemptAmount = isPwd ? toNumber(el.pwdExemption.value) : 0;
+      incomeTax = progressiveTax(Math.max(taxablePay - exemptAmount, 0));
+      insuranceRelief = Math.min(insurancePremiums * 0.15, toNumber(el.insuranceReliefCap.value));
+      paye = Math.max(incomeTax - toNumber(el.personalRelief.value) - insuranceRelief, 0);
+    }
+  }
 
   const otherDeductions = toNumber(el.otherDeductions.value);
   const employeeDeductions = paye + nssfEmployee + shif + ahlEmployee + employeePension + insurancePremiums + otherDeductions;
@@ -196,6 +230,7 @@ moneyFields.forEach(input => {
 });
 
 allInputs.forEach(input => input.addEventListener('input', calculate));
+el.employeeClassification.addEventListener('change', calculate);
 
 function restoreDefaultStatutoryToggles() {
   earningComponents.forEach(item => {
@@ -222,6 +257,10 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   el.telephoneThreshold.value = rawMoney(5000);
   el.mealsThreshold.value = rawMoney(5000);
   el.allowableDeductionCap.value = rawMoney(30000);
+  el.employeeClassification.value = 'primary';
+  el.secondaryFlatRate.value = 35;
+  el.contractorWhtRate.value = 5;
+  el.pwdExemption.value = rawMoney(150000);
   calculate();
 });
 

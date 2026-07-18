@@ -345,6 +345,75 @@ input:focus {
 .auth-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .auth-error { margin: 0; color: #b3261e; font-size: .85rem; font-weight: 600; }
+.auth-info { margin: 0; color: #1a7a3c; font-size: .85rem; font-weight: 600; }
+
+.password-field { position: relative; display: flex; }
+.password-field input { padding-right: 44px; }
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: #8a7264;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.password-toggle svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.password-toggle:hover { color: var(--brand-dark); background: rgba(242, 140, 24, .12); }
+
+.password-toggle.is-visible { position: absolute; }
+.password-toggle.is-visible::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 50%;
+  height: 1.6px;
+  background: currentColor;
+  transform: rotate(-45deg);
+}
+
+.link-button {
+  border: 0;
+  background: transparent;
+  color: var(--brand-dark);
+  font-weight: 700;
+  font-size: .85rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  justify-self: start;
+}
+.link-button:hover { color: var(--brand); }
+
+.classification-row {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(242, 140, 24, .08);
+}
+.classification-row select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fffaf3;
+  color: var(--text);
+  font-weight: 700;
+}
+.classification-row .hint { margin-top: 2px; }
 
 .trial-banner {
   margin-bottom: clamp(6px, 1.5vw, 10px);

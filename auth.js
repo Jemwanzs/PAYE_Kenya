@@ -23,6 +23,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const screens = {
   auth: document.getElementById('authScreen'),
+  recovery: document.getElementById('recoveryScreen'),
   finalizing: document.getElementById('finalizingScreen'),
   paywall: document.getElementById('paywallScreen'),
   calculator: document.getElementById('calculatorGate')
@@ -37,6 +38,12 @@ const authForm = document.getElementById('authForm');
 const authToggleBtn = document.getElementById('authToggleBtn');
 const authSubmitBtn = document.getElementById('authSubmitBtn');
 const authError = document.getElementById('authError');
+const authInfo = document.getElementById('authInfo');
+const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
+const recoveryForm = document.getElementById('recoveryForm');
+const recoveryError = document.getElementById('recoveryError');
+
+let inRecovery = false;
 
 function showScreen(name) {
   Object.entries(screens).forEach(([key, el]) => {
@@ -130,9 +137,65 @@ async function renderForSession() {
   renderAccess(computeAccess(profile));
 }
 
+document.querySelectorAll('.password-toggle').forEach(btn => {
+  const input = document.getElementById(btn.dataset.toggleFor);
+  btn.addEventListener('click', () => {
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+    btn.classList.toggle('is-visible', !showing);
+  });
+});
+
+forgotPasswordBtn.addEventListener('click', async () => {
+  authError.hidden = true;
+  authInfo.hidden = true;
+
+  const email = document.getElementById('authEmail').value.trim();
+  if (!email) {
+    authError.textContent = 'Enter your email above first, then click "Forgot password?".';
+    authError.hidden = false;
+    return;
+  }
+
+  forgotPasswordBtn.disabled = true;
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${location.origin}${location.pathname}`
+  });
+  forgotPasswordBtn.disabled = false;
+
+  if (error) {
+    authError.textContent = error.message;
+    authError.hidden = false;
+    return;
+  }
+
+  authInfo.textContent = 'Check your email for a password reset link.';
+  authInfo.hidden = false;
+});
+
+recoveryForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  recoveryError.hidden = true;
+
+  const password = document.getElementById('recoveryPassword').value;
+  const { error } = await supabase.auth.updateUser({ password });
+
+  if (error) {
+    recoveryError.textContent = error.message;
+    recoveryError.hidden = false;
+    return;
+  }
+
+  inRecovery = false;
+  recoveryForm.reset();
+  renderForSession();
+});
+
 authForm.addEventListener('submit', async event => {
   event.preventDefault();
   authError.hidden = true;
+  authInfo.hidden = true;
 
   const email = document.getElementById('authEmail').value.trim();
   const password = document.getElementById('authPassword').value;
@@ -191,6 +254,14 @@ manageBillingBtn.addEventListener('click', async () => {
   }
 });
 
-supabase.auth.onAuthStateChange(() => renderForSession());
+supabase.auth.onAuthStateChange(event => {
+  if (event === 'PASSWORD_RECOVERY') {
+    inRecovery = true;
+    showScreen('recovery');
+    return;
+  }
+  if (inRecovery) return;
+  renderForSession();
+});
 
 renderForSession();

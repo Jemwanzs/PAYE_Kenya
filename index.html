@@ -45,11 +45,42 @@
       </div>
       <form class="auth-form" id="authForm">
         <label>Email <input type="email" id="authEmail" required autocomplete="email" /></label>
-        <label>Password <input type="password" id="authPassword" required minlength="6" autocomplete="current-password" /></label>
+        <label>Password
+          <div class="password-field">
+            <input type="password" id="authPassword" required minlength="6" autocomplete="current-password" />
+            <button type="button" class="password-toggle" data-toggle-for="authPassword" aria-label="Show password">
+              <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </label>
         <p class="auth-error" id="authError" hidden></p>
+        <p class="auth-info" id="authInfo" hidden></p>
         <div class="auth-actions">
           <button type="submit" class="primary-button" id="authSubmitBtn" data-mode="signup">Sign up</button>
           <button type="button" class="ghost-button" id="authToggleBtn">Have an account? Log in</button>
+        </div>
+        <button type="button" class="link-button" id="forgotPasswordBtn">Forgot password?</button>
+      </form>
+    </section>
+
+    <section class="hero-card auth-card" id="recoveryScreen" hidden>
+      <div>
+        <p class="eyebrow"><span class="eyebrow-dot"></span>Account</p>
+        <h1>Set a new password</h1>
+        <p class="hero-copy">Choose a new password for your account.</p>
+      </div>
+      <form class="auth-form" id="recoveryForm">
+        <label>New password
+          <div class="password-field">
+            <input type="password" id="recoveryPassword" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="password-toggle" data-toggle-for="recoveryPassword" aria-label="Show password">
+              <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </label>
+        <p class="auth-error" id="recoveryError" hidden></p>
+        <div class="auth-actions">
+          <button type="submit" class="primary-button" id="recoverySubmitBtn">Update password</button>
         </div>
       </form>
     </section>
@@ -82,6 +113,18 @@
           <span>Monthly values in KES</span>
         </div>
 
+        <div class="classification-row">
+          <label>Employee classification
+            <select id="employeeClassification">
+              <option value="primary" selected>Primary Employee</option>
+              <option value="secondary">Secondary Employee</option>
+              <option value="contractor">Contractor</option>
+              <option value="pwd">Person With Disability</option>
+            </select>
+          </label>
+          <p class="hint" id="classificationHint"></p>
+        </div>
+
         <div class="tab-bar" role="tablist" aria-label="Input sections">
           <button type="button" class="tab-btn" id="tabBtnConfig" data-tab="config" role="tab" aria-selected="true" aria-controls="panelConfig">
             <svg viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M9 12h11M4 18h13M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="7" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
@@ -108,6 +151,16 @@
             <label>Personal relief <input data-money id="personalRelief" type="text" value="2,400.00" /></label>
             <label>NITA employer levy <input data-money id="nitaLevy" type="text" value="50.00" /></label>
           </div>
+        </details>
+
+        <details class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M9 12h11M4 18h13M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="7" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span>Classification-specific rates</span></summary>
+          <div class="field-grid two-col">
+            <label>Secondary employment flat PAYE rate % <input id="secondaryFlatRate" type="number" step="0.01" value="35" /></label>
+            <label>Contractor WHT rate % <input id="contractorWhtRate" type="number" step="0.01" value="5" /></label>
+            <label>PWD tax-exempt amount <input data-money id="pwdExemption" type="text" value="150,000.00" /></label>
+          </div>
+          <p class="hint">Only the rate relevant to the selected classification above is applied.</p>
         </details>
 
         <details class="input-group">
