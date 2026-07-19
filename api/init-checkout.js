@@ -40,12 +40,14 @@ module.exports = async function handler(req, res) {
 
     const payload = await paystackRes.json();
     if (!paystackRes.ok || !payload.status) {
-      res.status(502).json({ error: 'Could not start checkout' });
+      console.error('Paystack init failed', paystackRes.status, payload);
+      res.status(502).json({ error: payload.message || 'Could not start checkout' });
       return;
     }
 
     res.status(200).json({ url: payload.data.authorization_url });
   } catch (err) {
-    res.status(500).json({ error: 'Could not start checkout' });
+    console.error('init-checkout crashed', err);
+    res.status(500).json({ error: err.message || 'Could not start checkout' });
   }
 };

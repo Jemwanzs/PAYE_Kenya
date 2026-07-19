@@ -111,8 +111,9 @@ async function callFunction(path, body) {
     },
     body: body ? JSON.stringify(body) : undefined
   });
-  if (!res.ok) throw new Error('Request failed');
-  return res.json();
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(payload.error || 'Request failed');
+  return payload;
 }
 
 async function pollForAccess(attempts = 5, delayMs = 1500) {
@@ -212,8 +213,8 @@ packageGrid.addEventListener('click', async event => {
   try {
     const { url } = await callFunction('/api/init-checkout', { days });
     location.href = url;
-  } catch {
-    purchaseError.textContent = 'Could not start checkout. Please try again.';
+  } catch (err) {
+    purchaseError.textContent = err.message || 'Could not start checkout. Please try again.';
     purchaseError.hidden = false;
     allButtons.forEach(b => { b.disabled = false; });
   }
