@@ -697,7 +697,6 @@ input:disabled {
   .hero-card { align-items: flex-start; flex-direction: column; }
   .layout-grid { grid-template-columns: 1fr; }
   .results-panel { position: static; }
-  .app-shell { padding-bottom: 76px; }
 }
 
 @media (max-width: 760px) {
@@ -736,10 +735,44 @@ input:disabled {
   .classification-panel { max-height: 70vh; overflow-y: auto; }
 }
 
+/* Sub-4-inch phones (~360px and narrower) — noticeably smaller type and
+   boxes, and content centred rather than left-aligned like a document. */
 @media (max-width: 420px) {
+  .app-shell { width: min(100% - 12px, 1520px); margin: 8px auto; }
+  .hero-card, .layout-grid { padding: 12px; border-radius: 18px; }
+  .input-panel, .results-panel { padding: 10px; }
+
+  .hero-card { text-align: center; align-items: center; }
+  .hero-actions { justify-content: center; }
+  .auth-actions { justify-content: center; }
+  .link-button { justify-self: center; }
+  .eyebrow { justify-content: center; font-size: .64rem; }
+  h1 { font-size: 1.4rem; }
+  .hero-copy { font-size: .8rem; }
+
+  .panel-header { flex-direction: column; align-items: center; text-align: center; gap: 4px; }
+  .classification-row { text-align: center; }
+  .access-banner { font-size: .78rem; padding: 8px 12px; }
+
+  .net-card { text-align: center; padding: 16px; }
+  .net-card strong { font-size: 1.7rem; }
   .summary-cards { grid-template-columns: 1fr; }
+
+  input { padding: 9px 11px; font-size: 16px; }
+  label { font-size: .8rem; }
+  .input-group { padding: 9px 10px; }
+  .input-group summary { font-size: .86rem; }
+  .field-grid { gap: 8px; }
+  .earning-line { padding: 7px; }
+
   .hero-actions { flex-direction: column; align-items: stretch; }
-  .hero-actions .primary-button, .hero-actions .ghost-button { width: 100%; }
+  .hero-actions .primary-button, .hero-actions .ghost-button { width: 100%; padding: 10px 14px; font-size: .82rem; }
+
+  .breakdown-card { padding: 12px; }
+  .breakdown-card h2 { font-size: .88rem; }
+  .result-row { font-size: .82rem; padding: 8px 0; }
+
+  .tab-btn { font-size: .78rem; padding: 8px 6px; }
 }
 
 @media print {
@@ -756,7 +789,7 @@ input:disabled {
     font-size: 12px;
   }
 
-  .hero-actions, .input-panel, .mobile-sticky-summary, .credit-line { display: none; }
+  .hero-actions, .input-panel, .credit-line { display: none; }
   .app-shell, .layout-grid { width: 100%; margin: 0; border: 0; }
   .layout-grid { display: block; background: #fff; padding: 0; }
 
@@ -929,28 +962,6 @@ input:disabled {
 .dot.seg-ahl { background: var(--seg-ahl); }
 .dot.seg-other { background: var(--seg-other); }
 
-.mobile-sticky-summary {
-  display: none;
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  z-index: 20;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 18px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #241208, #69360e 55%, #f28c18);
-  color: #fff;
-  box-shadow: var(--shadow);
-}
-
-.mobile-sticky-summary span { font-size: .78rem; color: rgba(255,255,255,.8); font-weight: 700; }
-.mobile-sticky-summary strong { font-size: 1.25rem; white-space: nowrap; overflow-wrap: normal; word-break: keep-all; }
-
-@media (max-width: 900px) {
-  .mobile-sticky-summary { display: flex; }
-}
 
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.001ms !important; }

@@ -245,7 +245,6 @@ function calculate() {
   document.getElementById('paye').textContent = money(paye);
   document.getElementById('totalDeductions').textContent = money(employeeDeductions);
   document.getElementById('effectiveTaxRate').textContent = `Effective PAYE rate: ${effectiveTaxRate.toFixed(2)}%`;
-  document.getElementById('mobileNetPay').textContent = money(netPay);
   document.getElementById('netCardClassification').textContent = `Employee type: ${classificationLabels[classification] || classificationLabels.primary}`;
 
   const barSegments = [

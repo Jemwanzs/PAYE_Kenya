@@ -51,7 +51,6 @@ const buyMoreBtn = document.getElementById('buyMoreBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const resetBtn = document.getElementById('resetBtn');
 const printBtn = document.getElementById('printBtn');
-const mobileStickySummary = document.getElementById('mobileStickySummary');
 const authForm = document.getElementById('authForm');
 const authToggleBtn = document.getElementById('authToggleBtn');
 const authSubmitBtn = document.getElementById('authSubmitBtn');
@@ -141,7 +140,6 @@ function setPurchaseOverlay(show, { forced = false } = {}) {
 function renderAccess(access) {
   resetBtn.hidden = !access.hasAccess;
   printBtn.hidden = !access.hasAccess;
-  mobileStickySummary.hidden = !access.hasAccess;
   buyMoreBtn.hidden = access.isAdmin;
 
   if (access.isAdmin) {
@@ -170,7 +168,6 @@ async function renderForSession() {
     logoutBtn.hidden = true;
     resetBtn.hidden = true;
     printBtn.hidden = true;
-    mobileStickySummary.hidden = true;
     buyMoreBtn.hidden = true;
     accessBanner.hidden = true;
     setPurchaseOverlay(false);
