@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="16" fill="#fff8ee"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14.5" fill="none" stroke="#4d2b15" stroke-opacity="0.16" stroke-width="2"/>
+  <text x="33" y="44" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">
+    <tspan font-size="32" font-weight="800" fill="#f28c18">T</tspan><tspan font-size="20" font-weight="700" fill="#6b3510" dx="-4">a</tspan><tspan font-size="32" font-weight="800" fill="#c0392b" dx="-4">X</tspan>
+  </text>
+</svg>

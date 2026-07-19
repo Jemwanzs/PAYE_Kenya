@@ -16,6 +16,10 @@
   --seg-shif: #0f9d8f;
   --seg-ahl: #8c4fd1;
   --seg-other: #a08a7a;
+
+  --seg-nssf-tint: rgba(47, 111, 176, .12);
+  --seg-shif-tint: rgba(15, 157, 143, .12);
+  --seg-ahl-tint: rgba(140, 79, 209, .12);
 }
 
 * { box-sizing: border-box; min-width: 0; }
@@ -727,10 +731,12 @@ input:disabled {
   .hero-actions { gap: 8px; }
   .primary-button, .ghost-button { padding: 9px 14px; font-size: .84rem; }
 
-  /* Force "Affects" + pills onto their own line, every time, instead of an
+  /* Force "Affects" + chips onto their own line, every time, instead of an
      unpredictable partial wrap depending on label width. */
-  .stat-toggles { flex-basis: 100%; gap: 6px; font-size: .7rem; }
-  .stat-toggles label { padding: 4px 7px; }
+  .stat-toggles { flex-basis: 100%; gap: 5px; margin-top: 2px; padding-top: 6px; }
+  .stat-toggles > span { font-size: .62rem; }
+  .stat-toggles label { padding: 4px 8px 4px 7px; font-size: .68rem; gap: 4px; }
+  .stat-toggles input[type="checkbox"] { width: 12px; height: 12px; }
 
   .classification-panel { max-height: 70vh; overflow-y: auto; }
 }
@@ -764,6 +770,9 @@ input:disabled {
   .input-group summary { font-size: .86rem; }
   .field-grid { gap: 8px; }
   .earning-line { padding: 7px; }
+
+  .stat-toggles label { padding: 4px 7px 4px 6px; font-size: .64rem; }
+  .stat-toggles > span { font-size: .58rem; }
 
   .hero-actions { flex-direction: column; align-items: stretch; }
   .hero-actions .primary-button, .hero-actions .ghost-button { width: 100%; padding: 10px 14px; font-size: .82rem; }
@@ -879,14 +888,18 @@ input:disabled {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-size: .74rem;
-  font-weight: 800;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(77, 43, 21, 0.12);
 }
 
-.stat-toggles span {
-  color: var(--brand-dark);
+.stat-toggles > span {
+  color: var(--muted);
+  font-size: .66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .05em;
   margin-right: 2px;
 }
 
@@ -894,20 +907,47 @@ input:disabled {
   display: inline-flex;
   grid-template-columns: none;
   align-items: center;
-  gap: 4px;
-  padding: 5px 8px;
+  gap: 5px;
+  padding: 5px 10px 5px 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: #fff;
   font-size: .72rem;
-  color: #4b3428;
+  font-weight: 700;
+  color: #a3897a;
+  cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
 }
 
+.stat-toggles label:hover { border-color: rgba(242, 140, 24, .5); }
+
+.stat-toggles label abbr { text-decoration: none; }
+
 .stat-toggles input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   padding: 0;
-  accent-color: var(--brand);
+  margin: 0;
+  accent-color: currentColor;
+  cursor: pointer;
+}
+
+.stat-toggles label:has(input[id$="AffectsNssf"]:checked) {
+  background: var(--seg-nssf-tint);
+  border-color: var(--seg-nssf);
+  color: var(--seg-nssf);
+}
+
+.stat-toggles label:has(input[id$="AffectsShif"]:checked) {
+  background: var(--seg-shif-tint);
+  border-color: var(--seg-shif);
+  color: var(--seg-shif);
+}
+
+.stat-toggles label:has(input[id$="AffectsAhl"]:checked) {
+  background: var(--seg-ahl-tint);
+  border-color: var(--seg-ahl);
+  color: var(--seg-ahl);
 }
 
 .stacked-bar {
