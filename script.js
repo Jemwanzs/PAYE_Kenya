@@ -36,7 +36,7 @@ const classificationLabels = {
 const classificationHints = {
   primary: 'Primary employee: standard PAYE bands, all statutory deductions and reliefs apply as configured below.',
   secondary: 'Secondary employee: NSSF (employee and employer) is nil. SHIF and AHL remain allowable deductions, pension is not allowable. PAYE is charged at the flat rate below on the resulting taxable amount — no personal or insurance relief applies.',
-  contractor: 'Contractor: no NSSF, SHIF, AHL, pension or reliefs apply. Withholding tax is charged at the flat rate below on total gross pay.',
+  contractor: 'Contractor: no NSSF, SHIF, AHL, pension, NITA levy or reliefs apply — WHT (withholding tax) is the only statutory deduction, charged at the flat rate below on total gross pay.',
   pwd: 'Person with disability: taxed as a Primary Employee, except the exempt amount below is deducted from taxable pay before the standard PAYE bands apply.'
 };
 
@@ -48,7 +48,7 @@ const classificationIrrelevantFields = {
   contractor: [
     'nssfRate', 'nssfUpperLimit', 'shifRate', 'shifMinimum', 'ahlEmployeeRate', 'ahlEmployerRate',
     'employeePensionRate', 'employerPensionRate', 'allowableDeductionCap', 'telephoneThreshold', 'mealsThreshold',
-    'personalRelief', 'insuranceReliefCap', 'secondaryFlatRate', 'pwdExemption'
+    'personalRelief', 'insuranceReliefCap', 'secondaryFlatRate', 'pwdExemption', 'nitaLevy'
   ],
   pwd: ['secondaryFlatRate', 'contractorWhtRate']
 };
@@ -231,6 +231,9 @@ function calculate() {
     }
   }
 
+  const wht = isContractor ? paye : 0;
+  const nitaLevy = isContractor ? 0 : toNumber(el.nitaLevy.value);
+
   const otherDeductions = toNumber(el.otherDeductions.value);
   const employeeDeductions = paye + nssfEmployee + shif + ahlEmployee + employeePension + insurancePremiums + otherDeductions;
   const netPay = Math.max(cashGross - employeeDeductions, 0);
@@ -276,20 +279,27 @@ function calculate() {
     row('Gross pay displayed', displayGross, true)
   ].join('');
 
+  const taxRows = isContractor
+    ? [row('WHT', wht, true)]
+    : [
+        row('Income tax before reliefs', incomeTax),
+        row('Personal relief', appliedPersonalRelief),
+        row('Insurance relief', insuranceRelief),
+        row('PAYE payable', paye, true),
+        row('WHT', wht)
+      ];
+
   document.getElementById('deductionsRows').innerHTML = [
-    row('NSSF base selected', nssfBase),
-    row('SHIF base selected', shifBase),
-    row('AHL base selected', ahlBase),
+    row('NSSF Base', nssfBase),
+    row('SHIF Base', shifBase),
+    row('AHL Base', ahlBase),
     row('NSSF employee', nssfEmployee),
     row('SHIF employee', shif),
     row('AHL employee', ahlEmployee),
     row('Employee pension', employeePension),
     row('NSSF + pension allowable deductions', nssfPensionAllowable, true),
     row('Total tax-deductible statutory deductions', totalTaxAllowableDeductions),
-    row('Income tax before reliefs', incomeTax),
-    row('Personal relief', appliedPersonalRelief),
-    row('Insurance relief', insuranceRelief),
-    row('PAYE payable', paye, true),
+    ...taxRows,
     row('Insurance premiums deducted', insurancePremiums),
     row('Other deductions', otherDeductions)
   ].join('');
@@ -300,8 +310,8 @@ function calculate() {
     row('NSSF employer', nssfEmployer),
     row('AHL employer', ahlEmployer),
     row('Employer pension', employerPension),
-    row('NITA levy', toNumber(el.nitaLevy.value)),
-    row('Total employer cost add-ons', nssfEmployer + ahlEmployer + employerPension + toNumber(el.nitaLevy.value), true)
+    row('NITA levy', nitaLevy),
+    row('Total employer cost add-ons', nssfEmployer + ahlEmployer + employerPension + nitaLevy, true)
   ].join('');
 }
 
