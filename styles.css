@@ -708,80 +708,131 @@ input:disabled {
 }
 
 @media (max-width: 620px) {
-  .app-shell { width: min(100% - 18px, 1520px); margin: 10px auto; }
-  .hero-card, .layout-grid { border-radius: 22px; padding: 16px; }
-  .input-panel, .results-panel { padding: 14px; }
+  .app-shell { width: min(100% - 14px, 1520px); margin: 8px auto; }
+  .hero-card, .layout-grid { border-radius: 18px; padding: 12px; }
+  .input-panel, .results-panel { padding: 10px; }
   .field-grid.two-col { grid-template-columns: 1fr; }
-  .field-grid { gap: 10px; }
+  .field-grid { gap: 8px; }
 
-  .breakdown-columns { grid-template-columns: 1fr; gap: 16px 0; }
+  .breakdown-columns { grid-template-columns: 1fr; gap: 12px 0; }
   .breakdown-col + .breakdown-col {
     border-left: 0;
     padding-left: 0;
     border-top: 1px dashed var(--line);
-    padding-top: 12px;
+    padding-top: 10px;
   }
 
   /* Compact but still >=16px so mobile Safari doesn't zoom in on focus */
-  input { padding: 10px 12px; font-size: 16px; }
-  label { font-size: .84rem; }
-  .input-group { padding: 10px 12px; }
-  .earning-line { padding: 8px; }
+  input { padding: 8px 10px; font-size: 16px; }
+  label { font-size: .78rem; }
+  .input-group { padding: 8px 10px; }
+  .input-group summary { font-size: .84rem; gap: 7px; }
+  .earning-line { padding: 6px; gap: 6px; }
 
-  .hero-actions { gap: 8px; }
-  .primary-button, .ghost-button { padding: 9px 14px; font-size: .84rem; }
+  .hero-actions { gap: 6px; }
+  .primary-button, .ghost-button { padding: 7px 12px; font-size: .78rem; }
+
+  .tab-btn { font-size: .78rem; padding: 7px 6px; }
+  .tab-intro { padding: 8px 10px; font-size: .8rem; }
 
   /* Force "Affects" + chips onto their own line, every time, instead of an
      unpredictable partial wrap depending on label width. */
-  .stat-toggles { flex-basis: 100%; gap: 5px; margin-top: 2px; padding-top: 6px; }
-  .stat-toggles > span { font-size: .62rem; }
-  .stat-toggles label { padding: 4px 8px 4px 7px; font-size: .68rem; gap: 4px; }
-  .stat-toggles input[type="checkbox"] { width: 12px; height: 12px; }
+  .stat-toggles { flex-basis: 100%; gap: 4px; margin-top: 2px; padding-top: 5px; }
+  .stat-toggles > span { font-size: .58rem; }
+  .stat-toggles label { padding: 3px 7px 3px 6px; font-size: .62rem; gap: 3px; }
+  .stat-toggles input[type="checkbox"] { width: 11px; height: 11px; }
+
+  .summary-cards div { padding: 10px; }
+  .summary-cards span { font-size: .74rem; }
+  .summary-cards strong { font-size: .88rem; margin-top: 3px; }
+
+  .result-row { padding: 7px 0; font-size: .84rem; }
+  .breakdown-card { padding: 12px; }
+  .breakdown-card h2 { font-size: .9rem; }
 
   .classification-panel { max-height: 70vh; overflow-y: auto; }
+  .classification-trigger { padding: 8px 10px; }
+  .classification-option { padding: 7px 8px; }
+  .classification-option strong { font-size: .82rem; }
+  .classification-option small { font-size: .7rem; }
+
+  .purchase-modal { padding: 16px; }
+  .package-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 7px; }
+  .package-btn { padding: 10px 6px; }
+  .package-days { font-size: .84rem; }
+  .package-rate { font-size: .64rem; }
 }
 
-/* Sub-4-inch phones (~360px and narrower) — noticeably smaller type and
-   boxes, and content centred rather than left-aligned like a document. */
+/* Sub-4-inch phones (~360px and narrower) — micro type and boxes, and
+   content centred rather than left-aligned like a document. */
 @media (max-width: 420px) {
-  .app-shell { width: min(100% - 12px, 1520px); margin: 8px auto; }
-  .hero-card, .layout-grid { padding: 12px; border-radius: 18px; }
-  .input-panel, .results-panel { padding: 10px; }
+  .app-shell { width: min(100% - 10px, 1520px); margin: 6px auto; }
+  .hero-card, .layout-grid { padding: 9px; border-radius: 14px; }
+  .input-panel, .results-panel { padding: 7px; }
 
   .hero-card { text-align: center; align-items: center; }
   .hero-actions { justify-content: center; }
   .auth-actions { justify-content: center; }
   .link-button { justify-self: center; }
-  .eyebrow { justify-content: center; font-size: .64rem; }
-  h1 { font-size: 1.4rem; }
-  .hero-copy { font-size: .8rem; }
+  .eyebrow { justify-content: center; font-size: .56rem; }
+  h1 { font-size: 1.15rem; }
+  .hero-copy { font-size: .7rem; }
+  .credit-line { font-size: .6rem; }
 
-  .panel-header { flex-direction: column; align-items: center; text-align: center; gap: 4px; }
-  .classification-row { text-align: center; }
-  .access-banner { font-size: .78rem; padding: 8px 12px; }
+  .panel-header { flex-direction: column; align-items: center; text-align: center; gap: 2px; margin-bottom: 8px; }
+  .panel-header h2 { font-size: 1rem; }
+  .classification-row { text-align: center; padding: 8px 10px; }
+  .field-label { font-size: .78rem; }
+  .access-banner { font-size: .68rem; padding: 6px 10px; }
 
-  .net-card { text-align: center; padding: 16px; }
-  .net-card strong { font-size: 1.7rem; }
-  .summary-cards { grid-template-columns: 1fr; }
+  .net-card { text-align: center; padding: 12px; }
+  .net-card strong { font-size: 1.4rem; margin: 4px 0; }
+  .net-card span, .net-card small { font-size: .7rem; }
+  .summary-cards { grid-template-columns: 1fr; gap: 6px; }
+  .summary-cards div { padding: 8px 10px; }
+  .summary-cards span { font-size: .7rem; }
+  .summary-cards strong { font-size: .82rem; }
 
-  input { padding: 9px 11px; font-size: 16px; }
-  label { font-size: .8rem; }
-  .input-group { padding: 9px 10px; }
-  .input-group summary { font-size: .86rem; }
-  .field-grid { gap: 8px; }
-  .earning-line { padding: 7px; }
+  input { padding: 7px 9px; font-size: 16px; border-radius: 10px; }
+  label { font-size: .7rem; gap: 4px; }
+  .input-group { padding: 6px 7px; border-radius: 14px; }
+  .input-group summary { font-size: .76rem; gap: 6px; }
+  .field-grid { gap: 6px; margin-top: 10px; }
+  .earning-line { padding: 5px; gap: 5px; border-radius: 12px; }
+  .stat-impact-note { font-size: .68rem; padding: 7px 9px; }
+  .hint { font-size: .68rem; }
 
-  .stat-toggles label { padding: 4px 7px 4px 6px; font-size: .64rem; }
-  .stat-toggles > span { font-size: .58rem; }
+  .stat-toggles { gap: 3px; padding-top: 4px; }
+  .stat-toggles label { padding: 3px 6px 3px 5px; font-size: .56rem; gap: 3px; }
+  .stat-toggles > span { font-size: .5rem; }
+  .stat-toggles input[type="checkbox"] { width: 10px; height: 10px; }
 
   .hero-actions { flex-direction: column; align-items: stretch; }
-  .hero-actions .primary-button, .hero-actions .ghost-button { width: 100%; padding: 10px 14px; font-size: .82rem; }
+  .hero-actions .primary-button, .hero-actions .ghost-button { width: 100%; padding: 8px 12px; font-size: .74rem; }
 
-  .breakdown-card { padding: 12px; }
-  .breakdown-card h2 { font-size: .88rem; }
-  .result-row { font-size: .82rem; padding: 8px 0; }
+  .breakdown-card { padding: 9px; border-radius: 16px; }
+  .breakdown-card h2 { font-size: .8rem; margin-bottom: 8px; }
+  .result-row { font-size: .74rem; padding: 6px 0; gap: 6px; }
 
-  .tab-btn { font-size: .78rem; padding: 8px 6px; }
+  .tab-bar { padding: 3px; gap: 4px; margin-bottom: 10px; }
+  .tab-btn { font-size: .7rem; padding: 6px 4px; gap: 4px; }
+  .tab-intro { font-size: .74rem; padding: 7px 9px; }
+
+  .classification-trigger { padding: 7px 8px; font-size: .8rem; gap: 6px; }
+  .option-icon { font-size: .95rem; }
+  .classification-option { padding: 6px 7px; gap: 7px; }
+  .classification-option strong { font-size: .76rem; }
+  .classification-option small { font-size: .64rem; }
+  .classification-chevron { width: 13px; height: 13px; }
+
+  .modal-close { width: 28px; height: 28px; font-size: 1.05rem; top: 10px; right: 10px; }
+  .purchase-modal { padding: 14px; border-radius: 18px; }
+  .purchase-modal h2 { font-size: 1.1rem; }
+  .package-grid { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 6px; }
+  .package-btn { padding: 8px 5px; border-radius: 10px; }
+  .package-days { font-size: .76rem; }
+  .package-amount { font-size: .82rem; }
+  .package-rate { font-size: .6rem; }
 }
 
 @media print {
