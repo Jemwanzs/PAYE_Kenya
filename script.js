@@ -16,6 +16,10 @@ const earningComponents = [
   { id: 'otherNonCashBenefit', label: 'Other non-cash benefit' }
 ];
 
+// Irregular/one-off components — excluded from the "recurring earnings"
+// pool that a PWD employee's tax-exempt amount is deducted from.
+const irregularComponentIds = ['oneOffAllowances', 'overtimePay'];
+
 const ids = [
   'basicPay',
   ...earningComponents.map(item => item.id),
@@ -182,9 +186,29 @@ function calculate() {
   const cashGross = basicPay + directAllowances + cashAllowances + values.cashBenefits;
   const displayGross = cashGross + nonCashBenefits;
 
-  const nssfBase = statBase('Nssf', values, basicPay);
-  const shifBase = statBase('Shif', values, basicPay);
-  const ahlBase = statBase('Ahl', values, basicPay);
+  // A PWD employee's tax-exempt amount comes off Basic pay + recurring
+  // earnings (not one-off allowances/overtime) before anything else is
+  // computed — proportionally, so each earning's own NSSF/SHIF/AHL toggle
+  // still applies to its (reduced) share exactly like a Primary employee.
+  // Actual gross/cash-flow figures above are untouched — only the base that
+  // NSSF/SHIF/AHL/pension/taxable pay are built from shrinks.
+  const pwdExemption = toNumber(el.pwdExemption.value);
+  const regularEarningsPool = earningComponents.reduce((total, item) => {
+    return total + (irregularComponentIds.includes(item.id) ? 0 : values[item.id]);
+  }, basicPay);
+  const pwdReductionApplied = isPwd ? Math.min(pwdExemption, regularEarningsPool) : 0;
+  const pwdReductionRatio = pwdReductionApplied > 0 ? pwdReductionApplied / regularEarningsPool : 0;
+
+  function taxBasis(id, rawValue) {
+    return (pwdReductionRatio > 0 && !irregularComponentIds.includes(id)) ? rawValue * (1 - pwdReductionRatio) : rawValue;
+  }
+
+  const taxBasicPay = taxBasis('basicPay', basicPay);
+  const taxValues = Object.fromEntries(earningComponents.map(item => [item.id, taxBasis(item.id, values[item.id])]));
+
+  const nssfBase = isContractor ? 0 : statBase('Nssf', taxValues, taxBasicPay);
+  const shifBase = isContractor ? 0 : statBase('Shif', taxValues, taxBasicPay);
+  const ahlBase = isContractor ? 0 : statBase('Ahl', taxValues, taxBasicPay);
 
   const nssfEmployee = (isSecondary || isContractor) ? 0 : Math.min(nssfBase, toNumber(el.nssfUpperLimit.value)) * percentValue(el.nssfRate);
   const nssfEmployer = nssfEmployee;
@@ -192,16 +216,18 @@ function calculate() {
   const ahlEmployee = isContractor ? 0 : ahlBase * percentValue(el.ahlEmployeeRate);
   const ahlEmployer = isContractor ? 0 : ahlBase * percentValue(el.ahlEmployerRate);
 
-  const employeePension = isContractor ? 0 : basicPay * percentValue(el.employeePensionRate);
-  const employerPension = isContractor ? 0 : basicPay * percentValue(el.employerPensionRate);
+  const employeePension = isContractor ? 0 : taxBasicPay * percentValue(el.employeePensionRate);
+  const employerPension = isContractor ? 0 : taxBasicPay * percentValue(el.employerPensionRate);
   const allowableDeductionCap = toNumber(el.allowableDeductionCap.value);
   const nssfPensionAllowable = (isSecondary || isContractor) ? 0 : Math.min(nssfEmployee + employeePension, allowableDeductionCap);
   const totalTaxAllowableDeductions = isContractor ? 0 : (nssfPensionAllowable + shif + ahlEmployee);
 
-  const taxableTelephone = values.telephoneBenefit <= toNumber(el.telephoneThreshold.value) ? 0 : values.telephoneBenefit;
-  const taxableMeals = values.mealsBenefit <= toNumber(el.mealsThreshold.value) ? 0 : values.mealsBenefit;
-  const taxableBenefits = values.cashBenefits + values.carBenefit + taxableTelephone + taxableMeals + values.otherNonCashBenefit;
-  const taxableCashEarnings = basicPay + directAllowances + cashAllowances;
+  const taxableTelephone = taxValues.telephoneBenefit <= toNumber(el.telephoneThreshold.value) ? 0 : taxValues.telephoneBenefit;
+  const taxableMeals = taxValues.mealsBenefit <= toNumber(el.mealsThreshold.value) ? 0 : taxValues.mealsBenefit;
+  const taxableBenefits = taxValues.cashBenefits + taxValues.carBenefit + taxableTelephone + taxableMeals + taxValues.otherNonCashBenefit;
+  const taxDirectAllowances = taxValues.regularAllowances + taxValues.oneOffAllowances + taxValues.bonusPay;
+  const taxCashAllowances = taxValues.transportAllowance + taxValues.houseAllowance + taxValues.overtimePay + taxValues.otherCashAllowance;
+  const taxableCashEarnings = taxBasicPay + taxDirectAllowances + taxCashAllowances;
   const excessEmployerPension = Math.max((employerPension + nssfEmployer) - allowableDeductionCap, 0);
 
   const insurancePremiums = toNumber(el.lifeInsurance.value) + toNumber(el.educationInsurance.value);
@@ -223,8 +249,11 @@ function calculate() {
       incomeTax = taxablePay * percentValue(el.secondaryFlatRate);
       paye = incomeTax;
     } else {
-      const exemptAmount = isPwd ? toNumber(el.pwdExemption.value) : 0;
-      incomeTax = progressiveTax(Math.max(taxablePay - exemptAmount, 0));
+      // For PWD, the exempt amount is already baked into taxablePay above
+      // (it reduced the earnings that fed NSSF/SHIF/AHL/taxable pay), so it
+      // isn't subtracted again here — from this point on a PWD employee
+      // follows exactly the same route as a Primary employee.
+      incomeTax = progressiveTax(taxablePay);
       insuranceRelief = Math.min(insurancePremiums * 0.15, toNumber(el.insuranceReliefCap.value));
       appliedPersonalRelief = toNumber(el.personalRelief.value);
       paye = Math.max(incomeTax - appliedPersonalRelief - insuranceRelief, 0);
@@ -288,10 +317,19 @@ function calculate() {
         row('WHT', wht)
       ];
 
+  // Contractors have no NSSF/SHIF/AHL at all, so the base figures those
+  // would be computed from aren't a meaningful line item on their payslip.
+  const statutoryBaseRows = isContractor
+    ? []
+    : [
+        row('PWD exempt amount applied', pwdReductionApplied),
+        row('NSSF Base', nssfBase),
+        row('SHIF Base', shifBase),
+        row('AHL Base', ahlBase)
+      ];
+
   document.getElementById('deductionsRows').innerHTML = [
-    row('NSSF Base', nssfBase),
-    row('SHIF Base', shifBase),
-    row('AHL Base', ahlBase),
+    ...statutoryBaseRows,
     row('NSSF employee', nssfEmployee),
     row('SHIF employee', shif),
     row('AHL employee', ahlEmployee),
