@@ -33,6 +33,7 @@ module.exports = async function handler(req, res) {
         email: user.email,
         amount: amount * 100,
         currency: 'KES',
+        channels: ['card', 'mobile_money'],
         callback_url: `${appUrl}/?checkout=complete`,
         metadata: { supabase_user_id: user.id, days }
       })
