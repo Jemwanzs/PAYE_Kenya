@@ -67,7 +67,11 @@ const purchaseSubtitle = document.getElementById('purchaseSubtitle');
 const purchaseError = document.getElementById('purchaseError');
 const packageGrid = document.getElementById('packageGrid');
 
-let inRecovery = false;
+// Detected synchronously from the URL so recovery mode is set before
+// Supabase's async client init has a chance to race renderForSession() and
+// flash the calculator screen instead of the "set new password" form.
+let inRecovery = location.hash.includes('type=recovery');
+if (inRecovery) showScreen('recovery');
 
 function showScreen(name) {
   Object.entries(screens).forEach(([key, el]) => {
@@ -158,6 +162,7 @@ function renderAccess(access) {
 
 async function renderForSession() {
   const { data: { session } } = await supabase.auth.getSession();
+  if (inRecovery) return;
 
   if (!session) {
     logoutBtn.hidden = true;

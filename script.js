@@ -33,6 +33,30 @@ const classificationHints = {
   pwd: 'Person with disability: taxed as a Primary Employee, except the exempt amount below is deducted from taxable pay before the standard PAYE bands apply.'
 };
 
+// Config fields each classification ignores in the calculation — disabled in
+// the UI so what's greyed out matches what actually feeds the computation.
+const classificationIrrelevantFields = {
+  primary: ['secondaryFlatRate', 'contractorWhtRate', 'pwdExemption'],
+  secondary: ['nssfRate', 'nssfUpperLimit', 'personalRelief', 'insuranceReliefCap', 'contractorWhtRate', 'pwdExemption'],
+  contractor: [
+    'nssfRate', 'nssfUpperLimit', 'shifRate', 'shifMinimum', 'ahlEmployeeRate', 'ahlEmployerRate',
+    'employeePensionRate', 'employerPensionRate', 'allowableDeductionCap', 'telephoneThreshold', 'mealsThreshold',
+    'personalRelief', 'insuranceReliefCap', 'secondaryFlatRate', 'pwdExemption'
+  ],
+  pwd: ['secondaryFlatRate', 'contractorWhtRate']
+};
+const allClassificationGatedFields = [...new Set(Object.values(classificationIrrelevantFields).flat())];
+
+function applyClassificationFieldState(classification) {
+  const irrelevant = new Set(classificationIrrelevantFields[classification] || []);
+  allClassificationGatedFields.forEach(id => {
+    const field = el[id];
+    if (!field) return;
+    field.disabled = irrelevant.has(id);
+    field.closest('label')?.classList.toggle('field-disabled', irrelevant.has(id));
+  });
+}
+
 const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
 
 function toNumber(value) {
@@ -92,6 +116,7 @@ function calculate() {
   const isPwd = classification === 'pwd';
 
   document.getElementById('classificationHint').textContent = classificationHints[classification] || classificationHints.primary;
+  applyClassificationFieldState(classification);
 
   const basicPay = toNumber(el.basicPay.value);
   const values = Object.fromEntries(earningComponents.map(item => [item.id, toNumber(el[item.id].value)]));

@@ -332,6 +332,15 @@ input:focus {
   box-shadow: 0 0 0 4px rgba(242, 140, 24, .14);
 }
 
+input:disabled {
+  background: rgba(77, 43, 21, .05);
+  color: #a3897a;
+  cursor: not-allowed;
+}
+
+.field-disabled { opacity: .55; }
+.field-disabled::after { content: " (not used for this classification)"; font-weight: 500; font-size: .78em; color: #a3897a; }
+
 .hint { font-size: .82rem; margin-bottom: 0; }
 
 .auth-form {
