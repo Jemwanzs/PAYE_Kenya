@@ -17,7 +17,7 @@ if (SUPABASE_URL.startsWith('YOUR_') || SUPABASE_ANON_KEY.startsWith('YOUR_')) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const TRIAL_DAYS = 7;
+const TRIAL_DAYS = 1;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Keep in sync with the authoritative price list in api/_dayPackages.js.

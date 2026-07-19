@@ -21,8 +21,8 @@ All statutory rates are configurable directly from the calculator UI.
 
 ## Access model
 
-Signup is required to use the calculator. New accounts get a 7-day free
-trial; after that, a paid day-pass is required. Access is prepaid, not a
+Signup is required to use the calculator. New accounts get a 1-day free
+trial (`TRIAL_DAYS` in `auth.js`); after that, a paid day-pass is required. Access is prepaid, not a
 recurring subscription — buying a pack extends `profiles.access_expires_at`
 by that many days (stacking on top of any unused time). This is enforced by
 `auth.js` reading a `profiles` row from Supabase (protected by Row Level
