@@ -111,14 +111,38 @@
         </div>
 
         <div class="classification-row">
-          <label>Employee classification
-            <select id="employeeClassification">
-              <option value="primary" selected>Primary Employee</option>
-              <option value="secondary">Secondary Employee</option>
-              <option value="contractor">Contractor</option>
-              <option value="pwd">Person With Disability</option>
-            </select>
-          </label>
+          <span class="field-label">Employee classification</span>
+          <div class="classification-dropdown" id="classificationDropdown">
+            <button type="button" class="classification-trigger" id="classificationTrigger" aria-expanded="false" aria-controls="classificationPanel">
+              <span class="option-icon" id="classificationTriggerIcon">👤</span>
+              <span class="classification-trigger-text" id="classificationTriggerText">Primary Employee</span>
+              <svg class="classification-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="classification-panel" id="classificationPanel" hidden>
+              <button type="button" class="classification-option is-selected" data-value="primary" data-icon="👤" data-label="Primary Employee">
+                <span class="option-icon">👤</span>
+                <span class="option-text"><strong>Primary Employee</strong><small>Standard PAYE bands, all statutory deductions and reliefs apply.</small></span>
+              </button>
+              <button type="button" class="classification-option" data-value="secondary" data-icon="🧾" data-label="Secondary Employee">
+                <span class="option-icon">🧾</span>
+                <span class="option-text"><strong>Secondary Employee</strong><small>Flat-rate PAYE, NSSF nil, no personal or insurance relief.</small></span>
+              </button>
+              <button type="button" class="classification-option" data-value="contractor" data-icon="🧑‍💼" data-label="Contractor">
+                <span class="option-icon">🧑‍💼</span>
+                <span class="option-text"><strong>Contractor</strong><small>Flat withholding tax only — no other statutory deductions.</small></span>
+              </button>
+              <button type="button" class="classification-option" data-value="pwd" data-icon="♿" data-label="Person With Disability">
+                <span class="option-icon">♿</span>
+                <span class="option-text"><strong>Person With Disability</strong><small>Taxed as Primary, with a tax-exempt threshold applied first.</small></span>
+              </button>
+            </div>
+          </div>
+          <select id="employeeClassification" class="visually-hidden" tabindex="-1" aria-hidden="true">
+            <option value="primary" selected>Primary Employee</option>
+            <option value="secondary">Secondary Employee</option>
+            <option value="contractor">Contractor</option>
+            <option value="pwd">Person With Disability</option>
+          </select>
           <p class="hint" id="classificationHint"></p>
         </div>
 
@@ -280,6 +304,7 @@
           <span>Estimated net pay</span>
           <strong id="netPay">KES 0.00</strong>
           <small id="effectiveTaxRate">Effective PAYE rate: 0.00%</small>
+          <small id="netCardClassification" class="net-card-classification">Employee type: Primary Employee</small>
         </div>
 
         <div class="summary-cards">

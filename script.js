@@ -26,6 +26,13 @@ const ids = [
   'employeeClassification','secondaryFlatRate','contractorWhtRate','pwdExemption'
 ];
 
+const classificationLabels = {
+  primary: 'Primary Employee',
+  secondary: 'Secondary Employee',
+  contractor: 'Contractor',
+  pwd: 'Person With Disability'
+};
+
 const classificationHints = {
   primary: 'Primary employee: standard PAYE bands, all statutory deductions and reliefs apply as configured below.',
   secondary: 'Secondary employee: NSSF (employee and employer) is nil. SHIF and AHL remain allowable deductions, pension is not allowable. PAYE is charged at the flat rate below on the resulting taxable amount — no personal or insurance relief applies.',
@@ -58,6 +65,52 @@ function applyClassificationFieldState(classification) {
 }
 
 const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
+
+const classificationDropdown = document.getElementById('classificationDropdown');
+const classificationTrigger = document.getElementById('classificationTrigger');
+const classificationTriggerIcon = document.getElementById('classificationTriggerIcon');
+const classificationTriggerText = document.getElementById('classificationTriggerText');
+const classificationPanel = document.getElementById('classificationPanel');
+const classificationOptions = [...document.querySelectorAll('.classification-option')];
+
+function closeClassificationPanel() {
+  classificationPanel.hidden = true;
+  classificationTrigger.setAttribute('aria-expanded', 'false');
+}
+
+function openClassificationPanel() {
+  classificationPanel.hidden = false;
+  classificationTrigger.setAttribute('aria-expanded', 'true');
+}
+
+classificationTrigger.addEventListener('click', () => {
+  if (classificationPanel.hidden) openClassificationPanel(); else closeClassificationPanel();
+});
+
+function syncClassificationTrigger() {
+  const value = el.employeeClassification.value;
+  const option = classificationOptions.find(opt => opt.dataset.value === value) || classificationOptions[0];
+  classificationTriggerIcon.textContent = option.dataset.icon;
+  classificationTriggerText.textContent = option.dataset.label;
+  classificationOptions.forEach(opt => opt.classList.toggle('is-selected', opt === option));
+}
+
+classificationOptions.forEach(option => {
+  option.addEventListener('click', () => {
+    el.employeeClassification.value = option.dataset.value;
+    el.employeeClassification.dispatchEvent(new Event('change', { bubbles: true }));
+    syncClassificationTrigger();
+    closeClassificationPanel();
+  });
+});
+
+document.addEventListener('click', event => {
+  if (!classificationDropdown.contains(event.target)) closeClassificationPanel();
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeClassificationPanel();
+});
 
 function toNumber(value) {
   return Number(String(value || '').replace(/,/g, '')) || 0;
@@ -99,7 +152,8 @@ function progressiveTax(taxablePay) {
 }
 
 function row(label, value, highlight = false) {
-  return `<div class="result-row ${highlight ? 'highlight' : ''}"><span>${label}</span><strong>${money(value)}</strong></div>`;
+  const zero = !highlight && Math.round(value * 100) === 0;
+  return `<div class="result-row ${highlight ? 'highlight' : ''} ${zero ? 'zero-row' : ''}"><span>${label}</span><strong>${money(value)}</strong></div>`;
 }
 
 function statBase(statKey, componentValues, basicPay) {
@@ -155,6 +209,7 @@ function calculate() {
   let taxablePay;
   let incomeTax;
   let insuranceRelief = 0;
+  let appliedPersonalRelief = 0;
   let paye;
 
   if (isContractor) {
@@ -171,7 +226,8 @@ function calculate() {
       const exemptAmount = isPwd ? toNumber(el.pwdExemption.value) : 0;
       incomeTax = progressiveTax(Math.max(taxablePay - exemptAmount, 0));
       insuranceRelief = Math.min(insurancePremiums * 0.15, toNumber(el.insuranceReliefCap.value));
-      paye = Math.max(incomeTax - toNumber(el.personalRelief.value) - insuranceRelief, 0);
+      appliedPersonalRelief = toNumber(el.personalRelief.value);
+      paye = Math.max(incomeTax - appliedPersonalRelief - insuranceRelief, 0);
     }
   }
 
@@ -187,6 +243,7 @@ function calculate() {
   document.getElementById('totalDeductions').textContent = money(employeeDeductions);
   document.getElementById('effectiveTaxRate').textContent = `Effective PAYE rate: ${effectiveTaxRate.toFixed(2)}%`;
   document.getElementById('mobileNetPay').textContent = money(netPay);
+  document.getElementById('netCardClassification').textContent = `Employee type: ${classificationLabels[classification] || classificationLabels.primary}`;
 
   const barSegments = [
     { label: 'Net pay', value: netPay, className: 'seg-net' },
@@ -230,7 +287,7 @@ function calculate() {
     row('NSSF + pension allowable deductions', nssfPensionAllowable, true),
     row('Total tax-deductible statutory deductions', totalTaxAllowableDeductions),
     row('Income tax before reliefs', incomeTax),
-    row('Personal relief', toNumber(el.personalRelief.value)),
+    row('Personal relief', appliedPersonalRelief),
     row('Insurance relief', insuranceRelief),
     row('PAYE payable', paye, true),
     row('Insurance premiums deducted', insurancePremiums),
@@ -286,6 +343,7 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   el.secondaryFlatRate.value = 35;
   el.contractorWhtRate.value = 5;
   el.pwdExemption.value = rawMoney(150000);
+  syncClassificationTrigger();
   calculate();
 });
 
@@ -304,4 +362,5 @@ document.getElementById('proceedBtn').addEventListener('click', () => activateTa
 
 activateTab('config');
 restoreDefaultStatutoryToggles();
+syncClassificationTrigger();
 calculate();
