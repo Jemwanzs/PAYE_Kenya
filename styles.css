@@ -1299,6 +1299,12 @@ input:disabled {
 body.printing-payslip .app-shell > *:not(#payslipPrintWrap) { display: none !important; }
 body.printing-payslip #payslipPrintWrap { display: block; }
 
+/* Muster roll printing: same trick, scoped to #musterRollPrintWrap. The
+   landscape @page rule itself is injected/removed by JS around
+   window.print() since @page can't be scoped by a body class. */
+body.printing-muster-roll .app-shell > *:not(#musterRollPrintWrap) { display: none !important; }
+body.printing-muster-roll #musterRollPrintWrap { display: block; }
+
 .payroll-employee-list {
   display: grid;
   gap: 8px;
@@ -1324,3 +1330,55 @@ body.printing-payslip #payslipPrintWrap { display: block; }
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.001ms !important; }
 }
+
+/* Muster roll: one .muster-page per printed sheet, sized to a landscape
+   page's usable area so the footer (position: absolute; bottom: 0) sits
+   at the physical bottom of that sheet instead of right after the table. */
+.muster-page {
+  position: relative;
+  min-height: 190mm;
+  padding-bottom: 34px;
+  box-sizing: border-box;
+  page-break-after: always;
+  break-after: page;
+  background: #fff;
+  color: #14100c;
+}
+.muster-page:last-child { page-break-after: auto; break-after: auto; }
+
+.muster-header { margin-bottom: 10px; }
+.muster-business-name { font-size: 16px; font-weight: 800; }
+.muster-cycle { font-size: 12px; font-weight: 700; margin-top: 2px; }
+.muster-meta { font-size: 10px; color: #5a4d43; margin-top: 2px; }
+
+.muster-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 8px;
+}
+.muster-table th,
+.muster-table td {
+  border: 1px solid #999;
+  padding: 3px 4px;
+  overflow-wrap: break-word;
+}
+.muster-table th { background: #eee; font-weight: 700; text-align: center; }
+.muster-table .muster-left { text-align: left; }
+.muster-table .muster-right { text-align: right; }
+.muster-table .muster-bold { font-weight: 800; }
+.muster-table tr.muster-totals-row td { background: #f2ece2; border-top: 2px solid #333; }
+
+.muster-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  font-size: 10px;
+}
+.muster-prepared { white-space: nowrap; }
+.muster-page-number { font-weight: 700; white-space: nowrap; }

@@ -73,7 +73,8 @@ function defaultSettings() {
     job_positions: [], departments: [], sub_departments: [],
     employee_number_prefix: 'EMP', employee_number_padding: 3,
     employee_number_include_year: false, employee_number_include_month: false,
-    employee_number_next: 1
+    employee_number_next: 1,
+    business_name: ''
   };
 }
 
@@ -484,6 +485,7 @@ function renderLookupList(key, items) {
 }
 
 function populateSettingsForm(s) {
+  document.getElementById('settingsBusinessName').value = s.business_name || '';
   document.getElementById('settingsNssfRate').value = s.nssf_rate;
   document.getElementById('settingsNssfUpperLimit').value = rawMoney(s.nssf_upper_limit);
   document.getElementById('settingsShifRate').value = s.shif_rate;
@@ -574,6 +576,7 @@ saveSettingsBtn.addEventListener('click', async () => {
   settingsInfo.hidden = true;
 
   const payload = {
+    business_name: document.getElementById('settingsBusinessName').value.trim(),
     nssf_rate: toNumber(document.getElementById('settingsNssfRate').value),
     nssf_upper_limit: toNumber(document.getElementById('settingsNssfUpperLimit').value),
     shif_rate: toNumber(document.getElementById('settingsShifRate').value),

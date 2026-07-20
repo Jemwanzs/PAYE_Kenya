@@ -633,6 +633,10 @@
               <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
               Edit run
             </button>
+            <button type="button" class="ghost-button" id="musterRollBtn" hidden title="Only available once this run is approved or processed">
+              <svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5M9 13h6M9 17h6M9 9h2"/></svg>
+              Muster roll
+            </button>
             <button type="button" class="ghost-button" id="payrollDetailBackBtn">
               <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
               Back to payroll
@@ -661,6 +665,8 @@
         </div>
       </div>
     </section>
+
+    <div id="musterRollPrintWrap" hidden></div>
 
     <div id="payslipPrintWrap" hidden>
       <div class="hero-card">
@@ -704,6 +710,14 @@
         </div>
         <p class="auth-error" id="settingsError" hidden></p>
         <p class="auth-info" id="settingsInfo" hidden></p>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span>Company details</span></summary>
+          <div class="field-grid two-col">
+            <label>Business name <input type="text" id="settingsBusinessName" placeholder="e.g. Acme Kenya Ltd" /></label>
+          </div>
+          <p class="hint">Shown on the payroll muster roll and other printed company documents.</p>
+        </details>
 
         <details open class="input-group">
           <summary><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>Job positions</span></summary>

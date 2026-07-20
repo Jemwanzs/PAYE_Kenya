@@ -70,6 +70,7 @@ create table public.payroll_settings (
   employee_number_include_year boolean not null default false,
   employee_number_include_month boolean not null default false,
   employee_number_next         integer not null default 1,
+  business_name            text not null default '',
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now()
 );

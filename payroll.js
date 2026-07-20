@@ -35,10 +35,13 @@ const processRunBtn = document.getElementById('processRunBtn');
 const recalcRunBtn = document.getElementById('recalcRunBtn');
 const editRunBtn = document.getElementById('editRunBtn');
 const recallRunBtn = document.getElementById('recallRunBtn');
+const musterRollBtn = document.getElementById('musterRollBtn');
 
 let payrollRunsLoaded = false;
 let currentRunId = null;
 let currentRunStatus = null;
+let currentRunMeta = null;
+let currentRunPayslips = [];
 let editingRunId = null;
 let employeesCache = [];
 
@@ -60,7 +63,8 @@ function settingsFromRow(row) {
     daysInMonth: row.days_in_month,
     secondaryFlatRate: row.secondary_flat_rate,
     contractorWhtRate: row.contractor_wht_rate,
-    pwdExemption: row.pwd_exemption
+    pwdExemption: row.pwd_exemption,
+    businessName: row.business_name
   };
 }
 
@@ -110,7 +114,7 @@ function computePayslipRow({ runId, userId, employee, isFinalDues, settings }) {
     employee_snapshot: {
       first_name: employee.first_name, last_name: employee.last_name,
       job_position: employee.job_position, department: employee.department,
-      employee_type: employee.employee_type
+      employee_type: employee.employee_type, employee_number: employee.employee_number
     },
     compensation_snapshot: { ...values, toggles },
     results,
@@ -405,12 +409,15 @@ async function openRun(runId) {
   payrollDetailTableBody.dataset.payslips = JSON.stringify(rows.map(p => ({ id: p.id, employee_snapshot: p.employee_snapshot, compensation_snapshot: p.compensation_snapshot, results: p.results, period_label: run.period_label })));
 
   currentRunStatus = run.status;
+  currentRunMeta = run;
+  currentRunPayslips = rows;
   approveRunBtn.hidden = run.status !== 'draft';
   processRunBtn.hidden = run.status !== 'approved';
   recalcRunBtn.hidden = run.status !== 'draft';
   editRunBtn.hidden = run.status !== 'draft';
   recallRunBtn.hidden = run.status === 'draft';
   recallRunBtn.textContent = run.status === 'processed' ? 'Recall to approved' : 'Recall to draft';
+  musterRollBtn.hidden = run.status === 'draft';
 }
 
 payrollRunsTableBody.addEventListener('click', event => {
@@ -702,6 +709,207 @@ payrollDetailTableBody.addEventListener('click', event => {
   expandRow.appendChild(cell);
   row.after(expandRow);
 });
+
+// --- Muster roll ------------------------------------------------------
+// A landscape, paginated printout of every payslip in an approved or
+// processed run. Columns are built dynamically: a line item only gets
+// its own column if at least one employee in the run has a non-zero
+// value for it (basic pay, gross, total deductions, and net pay always
+// show as they're subtotals, not optional line items).
+
+const MUSTER_ROWS_PER_PAGE = 20;
+
+function musterEarningColumns() {
+  return [
+    { key: 'basicPay', label: 'Basic Pay', group: 'EARNINGS', always: true, getValue: p => toNumber(p.compensation_snapshot?.basicPay) },
+    ...earningComponents.map(item => ({
+      key: item.id, label: item.label, group: 'EARNINGS',
+      getValue: p => toNumber(p.compensation_snapshot?.[item.id])
+    }))
+  ];
+}
+
+function musterStatutoryColumns() {
+  return [
+    { key: 'nssfEmployee', label: 'NSSF', group: 'DEDUCTIONS', getValue: p => p.results.nssfEmployee || 0 },
+    { key: 'shif', label: 'SHIF', group: 'DEDUCTIONS', getValue: p => p.results.shif || 0 },
+    { key: 'ahlEmployee', label: 'AHL', group: 'DEDUCTIONS', getValue: p => p.results.ahlEmployee || 0 },
+    { key: 'payeWht', label: 'PAYE / WHT', group: 'DEDUCTIONS', getValue: p => (p.employee_snapshot.employee_type === 'contractor' ? p.results.wht : p.results.paye) || 0 }
+  ];
+}
+
+function musterCustomDeductionColumns() {
+  return [
+    { key: 'employeePension', label: 'Pension', group: 'DEDUCTIONS', getValue: p => p.results.employeePension || 0 },
+    { key: 'insurancePremiums', label: 'Insurance Premiums', group: 'DEDUCTIONS', getValue: p => p.results.insurancePremiums || 0 },
+    { key: 'otherDeductions', label: 'Other Deductions', group: 'DEDUCTIONS', getValue: p => p.results.otherDeductions || 0 }
+  ];
+}
+
+function musterEmployerColumns() {
+  return [
+    { key: 'nssfEmployer', label: 'NSSF (Employer)', group: 'EMPLOYER CONTRIBUTIONS', getValue: p => p.results.nssfEmployer || 0 },
+    { key: 'ahlEmployer', label: 'AHL (Employer)', group: 'EMPLOYER CONTRIBUTIONS', getValue: p => p.results.ahlEmployer || 0 },
+    { key: 'employerPension', label: 'Pension (Employer)', group: 'EMPLOYER CONTRIBUTIONS', getValue: p => p.results.employerPension || 0 },
+    { key: 'nitaLevy', label: 'NITA Levy', group: 'EMPLOYER CONTRIBUTIONS', getValue: p => p.results.nitaLevy || 0 }
+  ];
+}
+
+function musterReliefColumns() {
+  return [
+    { key: 'appliedPersonalRelief', label: 'Personal Relief', group: 'TAX RELIEFS', getValue: p => p.results.appliedPersonalRelief || 0 },
+    { key: 'insuranceRelief', label: 'Insurance Relief', group: 'TAX RELIEFS', getValue: p => p.results.insuranceRelief || 0 }
+  ];
+}
+
+function dynamicColumns(columns, payslips) {
+  return columns.filter(col => col.always || payslips.some(p => Math.round((col.getValue(p) || 0) * 100) !== 0));
+}
+
+// NSSF/SHIF/AHL *base* figures are deliberately left out — a muster
+// roll shows what was earned/deducted/contributed, not the statutory
+// calculation bases behind them.
+function buildMusterRollColumns(payslips) {
+  const leading = [
+    { key: 'employeeNumber', label: 'Payroll No.', text: true, getValue: p => p.employee_snapshot.employee_number || '—' },
+    { key: 'fullName', label: 'Full Name', text: true, getValue: p => `${p.employee_snapshot.first_name} ${p.employee_snapshot.last_name}` },
+    { key: 'jobPosition', label: 'Job Position', text: true, getValue: p => p.employee_snapshot.job_position || '—' },
+    { key: 'employeeType', label: 'Employee Type', text: true, getValue: p => classificationLabels[p.employee_snapshot.employee_type] || p.employee_snapshot.employee_type }
+  ];
+
+  const earnings = dynamicColumns(musterEarningColumns(), payslips);
+  const gross = { key: 'gross', label: 'Gross Pay', group: 'EARNINGS', bold: true, getValue: p => p.results.displayGross || 0 };
+  const statutory = dynamicColumns(musterStatutoryColumns(), payslips);
+  const custom = dynamicColumns(musterCustomDeductionColumns(), payslips);
+  const totalDeductions = { key: 'totalDeductions', label: 'Total Deductions', group: 'DEDUCTIONS', bold: true, getValue: p => p.results.employeeDeductions || 0 };
+  const netPay = { key: 'netPay', label: 'Net Pay', bold: true, getValue: p => p.results.netPay || 0 };
+  const employer = dynamicColumns(musterEmployerColumns(), payslips);
+  const reliefs = dynamicColumns(musterReliefColumns(), payslips);
+
+  return [
+    ...leading,
+    ...earnings, gross,
+    ...statutory, ...custom, totalDeductions,
+    netPay,
+    ...employer,
+    ...reliefs
+  ];
+}
+
+// Builds a two-row <thead>: row 1 merges consecutive same-group columns
+// under one heading (colspan), row 2 lists each column's own label.
+// Ungrouped columns (the employee-identity columns and Net Pay) span
+// both header rows instead.
+function musterHeaderRows(columns) {
+  const row1 = [];
+  const row2 = [];
+  let i = 0;
+  while (i < columns.length) {
+    const col = columns[i];
+    if (!col.group) {
+      row1.push(`<th rowspan="2">${col.label}</th>`);
+      i += 1;
+      continue;
+    }
+    let span = 1;
+    while (i + span < columns.length && columns[i + span].group === col.group) span += 1;
+    row1.push(`<th colspan="${span}">${col.group}</th>`);
+    for (let j = 0; j < span; j += 1) row2.push(`<th>${columns[i + j].label}</th>`);
+    i += span;
+  }
+  return `<tr>${row1.join('')}</tr><tr>${row2.join('')}</tr>`;
+}
+
+function musterBodyRow(payslip, columns) {
+  const cells = columns.map(col => {
+    const raw = col.getValue(payslip);
+    const value = col.text ? raw : money(raw || 0);
+    const classes = [col.text ? 'muster-left' : 'muster-right', col.bold ? 'muster-bold' : ''].filter(Boolean).join(' ');
+    return `<td class="${classes}">${value}</td>`;
+  });
+  return `<tr>${cells.join('')}</tr>`;
+}
+
+function musterTotalsRow(payslips, columns) {
+  const cells = columns.map((col, idx) => {
+    if (col.text) return `<td class="muster-left muster-bold">${idx === 0 ? 'GRAND TOTAL' : ''}</td>`;
+    const total = payslips.reduce((sum, p) => sum + (col.getValue(p) || 0), 0);
+    return `<td class="muster-right muster-bold">${money(total)}</td>`;
+  });
+  return `<tr class="muster-totals-row">${cells.join('')}</tr>`;
+}
+
+function chunkRows(list, size) {
+  const out = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+}
+
+function buildMusterRollHtml(run, payslips, businessName) {
+  const columns = buildMusterRollColumns(payslips);
+  const pages = chunkRows(payslips, MUSTER_ROWS_PER_PAGE);
+  if (!pages.length) pages.push([]);
+  const generatedAt = new Date().toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' });
+  const statusLabel = run.status.charAt(0).toUpperCase() + run.status.slice(1);
+
+  return pages.map((pagePayslips, pageIndex) => {
+    const isLastPage = pageIndex === pages.length - 1;
+    return `
+      <div class="muster-page">
+        <div class="muster-header">
+          <div class="muster-business-name">${businessName || 'Business name not set'}</div>
+          <div class="muster-cycle">Payroll Cycle: ${run.period_label} (${run.period_start} to ${run.period_end})</div>
+          <div class="muster-meta">Muster Roll — Status: ${statusLabel} &middot; Generated: ${generatedAt}</div>
+        </div>
+        <table class="muster-table">
+          <thead>${musterHeaderRows(columns)}</thead>
+          <tbody>
+            ${pagePayslips.map(p => musterBodyRow(p, columns)).join('')}
+            ${isLastPage ? musterTotalsRow(payslips, columns) : ''}
+          </tbody>
+        </table>
+        <div class="muster-footer">
+          <div class="muster-prepared">${isLastPage ? 'Prepared by &mdash; ________________________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: __________________' : ''}</div>
+          <div class="muster-page-number">Page ${String(pageIndex + 1).padStart(2, '0')}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function printMusterRoll() {
+  if (!currentRunId || !currentRunMeta) return;
+  musterRollBtn.disabled = true;
+  payrollDetailError.hidden = true;
+  try {
+    const { data: settingsRow } = await supabase.from('payroll_settings').select('business_name').maybeSingle();
+    const businessName = settingsRow?.business_name || '';
+
+    const wrap = document.getElementById('musterRollPrintWrap');
+    wrap.innerHTML = buildMusterRollHtml(currentRunMeta, currentRunPayslips, businessName);
+
+    // @page size is a page-level rule, not scopable by a body class, so
+    // it's injected just for this print and removed right after —
+    // payslip/calculator prints stay on the browser's portrait default.
+    const pageStyle = document.createElement('style');
+    pageStyle.textContent = '@page { size: landscape; margin: 10mm; }';
+    document.head.appendChild(pageStyle);
+
+    wrap.hidden = false;
+    document.body.classList.add('printing-muster-roll');
+    window.print();
+    document.body.classList.remove('printing-muster-roll');
+    wrap.hidden = true;
+    pageStyle.remove();
+  } catch (err) {
+    payrollDetailError.textContent = err.message || 'Could not generate the muster roll.';
+    payrollDetailError.hidden = false;
+  } finally {
+    musterRollBtn.disabled = false;
+  }
+}
+
+musterRollBtn.addEventListener('click', printMusterRoll);
 
 document.addEventListener('app:page', event => {
   if (event.detail.page === 'payroll') {
