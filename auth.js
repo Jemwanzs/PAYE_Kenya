@@ -75,6 +75,7 @@ const purchaseCloseBtn = document.getElementById('purchaseCloseBtn');
 const purchaseTitle = document.getElementById('purchaseTitle');
 const purchaseSubtitle = document.getElementById('purchaseSubtitle');
 const purchaseError = document.getElementById('purchaseError');
+const purchaseLogoutBtn = document.getElementById('purchaseLogoutBtn');
 const packageGrid = document.getElementById('packageGrid');
 const adminPreviewDropdown = document.getElementById('adminPreviewDropdown');
 const adminPreviewBtn = document.getElementById('adminPreviewBtn');
@@ -377,6 +378,11 @@ authToggleBtn.addEventListener('click', () => {
 });
 
 logoutBtn.addEventListener('click', async () => {
+  await supabase.auth.signOut();
+  renderForSession();
+});
+
+purchaseLogoutBtn.addEventListener('click', async () => {
   await supabase.auth.signOut();
   renderForSession();
 });
