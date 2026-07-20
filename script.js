@@ -39,6 +39,10 @@ const classificationLabels = {
   pwd: 'Person With Disability'
 };
 
+// Shared with employees.js so the per-employee compensation form stays in
+// lockstep with the calculator's own fields — single source of truth.
+window.PayrollShared = { earningComponents, irregularComponentIds, classificationLabels, toNumber, money, rawMoney };
+
 const classificationHints = {
   primary: 'Primary employee: standard PAYE bands, all statutory deductions and reliefs apply as configured below.',
   secondary: 'Secondary employee: NSSF (employee and employer) is nil. SHIF and AHL remain allowable deductions, pension is not allowable. PAYE is charged at the flat rate below on the resulting taxable amount — no personal or insurance relief applies.',

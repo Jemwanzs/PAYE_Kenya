@@ -118,6 +118,17 @@
 
     <div class="access-banner" id="accessBanner" hidden></div>
 
+    <nav class="app-nav" id="appNav" hidden>
+      <button type="button" class="app-nav-btn" data-page="calculator" aria-selected="true">
+        <svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h2M12.5 11h2M17 11h0M8 15h2M12.5 15h2M17 15h0"/></svg>
+        Calculator
+      </button>
+      <button type="button" class="app-nav-btn" data-page="employees" aria-selected="false">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Employees
+      </button>
+    </nav>
+
     <section class="layout-grid" id="calculatorGate" hidden>
       <form class="input-panel" id="payrollForm">
         <div class="panel-header">
@@ -363,6 +374,120 @@
         </div>
       </aside>
     </section>
+
+    <section class="employees-page" id="employeesPage" hidden>
+      <div class="employees-directory" id="employeesDirectoryView">
+        <div class="panel-header">
+          <h2>Employees</h2>
+          <button type="button" class="primary-button" id="addEmployeeBtn">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Add employee
+          </button>
+        </div>
+
+        <div class="employee-status-filter tab-bar" role="tablist" aria-label="Employee status filter">
+          <button type="button" class="tab-btn" data-status-filter="active" aria-selected="true">Active</button>
+          <button type="button" class="tab-btn" data-status-filter="terminated" aria-selected="false">Terminated</button>
+          <button type="button" class="tab-btn" data-status-filter="all" aria-selected="false">All</button>
+        </div>
+
+        <p class="hint" id="employeesEmptyState" hidden>No employees here yet.</p>
+
+        <div class="employee-table-wrap">
+          <table class="employee-table" id="employeeTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Position</th>
+                <th>Department</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="employeeTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <form class="employees-form" id="employeeFormView" hidden>
+        <div class="panel-header">
+          <h2 id="employeeFormTitle">Add employee</h2>
+          <button type="button" class="ghost-button" id="employeeFormBackBtn">
+            <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Back to directory
+          </button>
+        </div>
+
+        <p class="auth-error" id="employeeFormError" hidden></p>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>Job details</span></summary>
+          <div class="field-grid two-col">
+            <label>First name <input type="text" id="employeeFirstName" required /></label>
+            <label>Last name <input type="text" id="employeeLastName" required /></label>
+            <label>Email <input type="email" id="employeeEmail" /></label>
+            <label>Phone <input type="text" id="employeePhone" /></label>
+            <label>Job position <input type="text" id="employeeJobPosition" /></label>
+            <label>Department <input type="text" id="employeeDepartment" /></label>
+            <label>Sub department <input type="text" id="employeeSubDepartment" /></label>
+            <label>Employee type
+              <select id="employeeType">
+                <option value="primary">Primary Employee</option>
+                <option value="secondary">Secondary Employee</option>
+                <option value="contractor">Contractor</option>
+                <option value="pwd">Person With Disability</option>
+              </select>
+            </label>
+            <label>Contract start date <input type="date" id="employeeContractStart" /></label>
+          </div>
+        </details>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v3"/><path d="M3 7v10a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-4"/></svg><span>Compensation</span></summary>
+          <div class="field-grid">
+            <label>Basic pay <input data-money id="employeeBasicPay" type="text" inputmode="decimal" placeholder="0.00" /></label>
+          </div>
+          <div id="employeeCompensationFields"></div>
+        </details>
+
+        <details class="input-group">
+          <summary><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg><span>Optional deductions</span></summary>
+          <div class="field-grid two-col">
+            <label>Employee pension % <input id="employeePensionRateField" type="number" step="0.01" placeholder="0" /></label>
+            <label>Employer pension % <input id="employerPensionRateField" type="number" step="0.01" placeholder="0" /></label>
+            <label>Life insurance premium <input data-money id="employeeLifeInsurance" type="text" placeholder="0.00" /></label>
+            <label>Education insurance premium <input data-money id="employeeEducationInsurance" type="text" placeholder="0.00" /></label>
+            <label>Other post-tax deductions <input data-money id="employeeOtherDeductions" type="text" placeholder="0.00" /></label>
+          </div>
+        </details>
+
+        <div class="employee-form-actions">
+          <button type="submit" class="primary-button" id="employeeSaveBtn">Save employee</button>
+          <button type="button" class="ghost-button" id="employeeTerminateBtn" hidden>Terminate</button>
+          <button type="button" class="ghost-button" id="employeeRehireBtn" hidden>Rehire</button>
+        </div>
+      </form>
+
+      <div class="purchase-overlay" id="terminateOverlay" hidden>
+        <div class="purchase-modal" style="max-width:420px">
+          <button type="button" class="modal-close" id="terminateCloseBtn" aria-label="Close">&times;</button>
+          <p class="eyebrow"><span class="eyebrow-dot"></span>Terminate employee</p>
+          <h2 id="terminateEmployeeName">Terminate employee</h2>
+          <form id="terminateForm">
+            <div class="field-grid">
+              <label>Termination date <input type="date" id="terminateDate" required /></label>
+              <label>Reason <textarea id="terminateReason" rows="3" required></textarea></label>
+            </div>
+            <p class="auth-error" id="terminateError" hidden></p>
+            <div class="auth-actions" style="margin-top:14px">
+              <button type="submit" class="primary-button">Confirm terminate</button>
+              <button type="button" class="ghost-button" id="terminateCancelBtn">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
   </main>
 
   <div class="purchase-overlay" id="purchaseOverlay" hidden>
@@ -382,5 +507,6 @@
 
   <script src="script.js"></script>
   <script type="module" src="auth.js"></script>
+  <script type="module" src="employees.js"></script>
 </body>
 </html>

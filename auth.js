@@ -17,6 +17,10 @@ if (SUPABASE_URL.startsWith('YOUR_') || SUPABASE_ANON_KEY.startsWith('YOUR_')) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Shared with employees.js so it reuses this exact client/session instead
+// of creating a second GoTrue client (which would fight over session storage).
+export { supabase };
+
 const TRIAL_DAYS = 1;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -44,9 +48,13 @@ const screens = {
   auth: document.getElementById('authScreen'),
   recovery: document.getElementById('recoveryScreen'),
   finalizing: document.getElementById('finalizingScreen'),
-  calculator: document.getElementById('calculatorGate')
+  calculator: document.getElementById('calculatorGate'),
+  employees: document.getElementById('employeesPage')
 };
 const accessBanner = document.getElementById('accessBanner');
+const appNav = document.getElementById('appNav');
+const appNavButtons = [...document.querySelectorAll('.app-nav-btn')];
+let activeAppPage = 'calculator';
 const buyMoreBtn = document.getElementById('buyMoreBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const resetBtn = document.getElementById('resetBtn');
@@ -146,6 +154,7 @@ function renderAccess(access) {
   printBtn.hidden = !access.hasAccess;
   buyMoreBtn.hidden = access.isAdmin;
   adminPreviewDropdown.hidden = !access.isAdmin;
+  appNav.hidden = !access.hasAccess;
 
   if (access.isAdmin) {
     accessBanner.hidden = false;
@@ -160,8 +169,9 @@ function renderAccess(access) {
     accessBanner.hidden = true;
   }
 
-  showScreen('calculator');
+  showScreen(activeAppPage);
   calculatorGate.classList.toggle('blurred', !access.hasAccess);
+  screens.employees.classList.toggle('blurred', !access.hasAccess);
   setPurchaseOverlay(!access.hasAccess, { forced: !access.hasAccess });
 }
 
@@ -175,6 +185,7 @@ async function renderForSession() {
     printBtn.hidden = true;
     buyMoreBtn.hidden = true;
     adminPreviewDropdown.hidden = true;
+    appNav.hidden = true;
     accessBanner.hidden = true;
     setPurchaseOverlay(false);
     showScreen('auth');
@@ -258,6 +269,15 @@ adminPreviewMenu.addEventListener('click', event => {
 
 document.addEventListener('click', event => {
   if (!adminPreviewDropdown.hidden && !adminPreviewDropdown.contains(event.target)) closeAdminPreviewMenu();
+});
+
+appNavButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeAppPage = btn.dataset.page;
+    appNavButtons.forEach(b => b.setAttribute('aria-selected', String(b === btn)));
+    showScreen(activeAppPage);
+    document.dispatchEvent(new CustomEvent('app:page', { detail: { page: activeAppPage } }));
+  });
 });
 
 document.querySelectorAll('.password-toggle').forEach(btn => {

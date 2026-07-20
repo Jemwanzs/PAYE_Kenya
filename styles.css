@@ -1106,6 +1106,113 @@ input:disabled {
 .dot.seg-ahl { background: var(--seg-ahl); }
 .dot.seg-other { background: var(--seg-other); }
 
+.app-nav {
+  display: flex;
+  gap: 8px;
+  padding: 5px;
+  margin-bottom: clamp(6px, 1.5vw, 10px);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .12);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, .18);
+}
+
+.app-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: transparent;
+  color: rgba(255, 255, 255, .8);
+  font-weight: 800;
+  font-size: .9rem;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.app-nav-btn:hover { color: #fff; }
+.app-nav-btn[aria-selected="true"] {
+  background: #fff;
+  color: var(--brand-dark);
+  box-shadow: 0 6px 16px rgba(16, 8, 3, .18);
+}
+
+.employees-page {
+  border-radius: 30px;
+  background: rgba(255, 255, 255, .12);
+  backdrop-filter: blur(14px);
+  padding: 18px;
+}
+
+.employees-directory,
+.employees-form {
+  border-radius: 24px;
+  background: var(--card-2);
+  padding: 18px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.employee-status-filter { grid-template-columns: repeat(3, 1fr); max-width: 420px; }
+
+.employee-table-wrap { overflow-x: auto; }
+
+.employee-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88rem;
+}
+
+.employee-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  border-bottom: 2px solid var(--line);
+}
+
+.employee-table td {
+  padding: 12px;
+  border-bottom: 1px dashed var(--line);
+  color: #4b3428;
+}
+
+.employee-table tr:last-child td { border-bottom: 0; }
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: .74rem;
+  font-weight: 800;
+}
+.status-pill.status-active { background: rgba(23, 107, 77, .14); color: var(--seg-net); }
+.status-pill.status-terminated { background: rgba(179, 38, 30, .12); color: #b3261e; }
+
+.employee-form-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+@media (max-width: 620px) {
+  .employees-page { padding: 12px; border-radius: 18px; }
+  .employees-directory, .employees-form { padding: 12px; }
+  .employee-status-filter { max-width: none; }
+  .employee-table { font-size: .8rem; }
+  .employee-table th, .employee-table td { padding: 8px; }
+}
+
+@media print {
+  .app-nav, .employees-page { display: none; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.001ms !important; }
