@@ -575,7 +575,7 @@
 
       <div class="employees-form" id="payrollNewView" hidden>
         <div class="panel-header">
-          <h2>New payroll run</h2>
+          <h2 id="payrollNewTitle">New payroll run</h2>
           <div class="hero-actions">
             <button type="button" class="ghost-button" id="syncPayrollEmployeesBtn">
               <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
@@ -617,17 +617,27 @@
         </details>
 
         <div class="employee-form-actions">
-          <button type="button" class="primary-button" id="createPayrollRunBtn">Create draft run</button>
+          <button type="button" class="primary-button" id="createPayrollRunBtn"><span id="createPayrollRunBtnText">Create draft run</span></button>
         </div>
       </div>
 
       <div class="employees-form" id="payrollDetailView" hidden>
         <div class="panel-header">
           <h2 id="payrollDetailTitle">Payroll run</h2>
-          <button type="button" class="ghost-button" id="payrollDetailBackBtn">
-            <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            Back to payroll
-          </button>
+          <div class="hero-actions">
+            <button type="button" class="ghost-button" id="recalcRunBtn" hidden title="Recompute this run's payslips using each employee's current pay, benefits, and deductions">
+              <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+              Sync payroll
+            </button>
+            <button type="button" class="ghost-button" id="editRunBtn" hidden>
+              <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+              Edit run
+            </button>
+            <button type="button" class="ghost-button" id="payrollDetailBackBtn">
+              <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              Back to payroll
+            </button>
+          </div>
         </div>
         <p class="auth-error" id="payrollDetailError" hidden></p>
         <div class="access-banner" id="payrollDetailStatus"></div>
@@ -642,13 +652,50 @@
             <tbody id="payrollDetailTableBody"></tbody>
           </table>
         </div>
+        <p class="hint">Click on an employee's row to see the full calculation breakdown for that payslip.</p>
 
         <div class="employee-form-actions">
           <button type="button" class="primary-button" id="approveRunBtn">Approve run</button>
           <button type="button" class="primary-button" id="processRunBtn" hidden>Mark processed</button>
+          <button type="button" class="ghost-button" id="recallRunBtn" hidden></button>
         </div>
       </div>
     </section>
+
+    <div class="purchase-overlay" id="payslipDetailOverlay" hidden>
+      <div class="purchase-modal payslip-detail-modal">
+        <button type="button" class="modal-close" id="payslipDetailCloseBtn" aria-label="Close">&times;</button>
+        <p class="eyebrow"><span class="eyebrow-dot"></span>Payslip breakdown</p>
+        <h2 id="payslipDetailTitle">Employee — Period</h2>
+        <p class="hero-copy" id="payslipDetailSubtitle"></p>
+
+        <div class="results-panel">
+          <div class="net-card">
+            <span>Net pay</span>
+            <strong id="payslipDetailNetPay">KES 0.00</strong>
+            <small id="payslipDetailRate"></small>
+          </div>
+          <div class="summary-cards">
+            <div><span>Gross pay</span><strong id="payslipDetailGross">KES 0.00</strong></div>
+            <div><span>Taxable pay</span><strong id="payslipDetailTaxable">KES 0.00</strong></div>
+            <div><span>PAYE / WHT</span><strong id="payslipDetailPaye">KES 0.00</strong></div>
+            <div><span>Total deductions</span><strong id="payslipDetailTotalDeductions">KES 0.00</strong></div>
+          </div>
+          <div class="breakdown-card breakdown-computation">
+            <h2>Computation breakdown</h2>
+            <div class="breakdown-columns">
+              <div class="breakdown-col"><h3>Earnings</h3><div id="payslipDetailEarnings"></div></div>
+              <div class="breakdown-col"><h3>Deductions &amp; reliefs</h3><div id="payslipDetailDeductions"></div></div>
+            </div>
+            <div class="breakdown-net" id="payslipDetailNetRow"></div>
+          </div>
+          <div class="breakdown-card employer-card">
+            <h2>Employer contributions</h2>
+            <div id="payslipDetailEmployerRows"></div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div id="payslipPrintWrap" hidden>
       <div class="hero-card">

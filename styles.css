@@ -508,6 +508,9 @@ input:disabled {
 
 .classification-option.simple { align-items: center; font-size: .88rem; font-weight: 700; color: var(--text); }
 .lookup-dropdown .classification-panel { max-height: 240px; overflow-y: auto; }
+.payslip-detail-modal { max-width: 760px; }
+.payroll-detail-row { cursor: pointer; }
+.payroll-detail-row:hover { background: rgba(242, 140, 24, .08); }
 
 .net-card-classification {
   display: block;
