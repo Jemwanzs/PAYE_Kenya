@@ -65,6 +65,11 @@ create table public.payroll_settings (
   job_positions            jsonb not null default '[]'::jsonb,
   departments              jsonb not null default '[]'::jsonb,
   sub_departments          jsonb not null default '[]'::jsonb,
+  employee_number_prefix       text not null default 'EMP',
+  employee_number_padding      integer not null default 3,
+  employee_number_include_year boolean not null default false,
+  employee_number_include_month boolean not null default false,
+  employee_number_next         integer not null default 1,
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now()
 );
@@ -95,6 +100,7 @@ create table public.employees (
   termination_reason   text,
   compensation         jsonb not null default '{}'::jsonb,
   statutory_toggles    jsonb not null default '{}'::jsonb,
+  employee_number      text,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now()
 );
@@ -108,6 +114,49 @@ create policy "manage_own_employees"
 
 create index employees_user_id_idx on public.employees(user_id);
 create index employees_status_idx on public.employees(status);
+create unique index employees_user_number_idx on public.employees(user_id, employee_number) where employee_number is not null;
+
+-- Atomically formats and reserves the next employee number for the
+-- calling user (see migrate_employee_numbering.sql for the
+-- version-controlled description; kept in sync here for fresh installs).
+create or replace function public.next_employee_number()
+returns text
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  settings_row public.payroll_settings%rowtype;
+  formatted text;
+begin
+  select * into settings_row
+  from public.payroll_settings
+  where user_id = auth.uid()
+  for update;
+
+  if not found then
+    insert into public.payroll_settings (user_id)
+    values (auth.uid())
+    returning * into settings_row;
+  end if;
+
+  formatted := coalesce(settings_row.employee_number_prefix, '');
+  if settings_row.employee_number_include_year then
+    formatted := formatted || to_char(now(), 'YYYY');
+  end if;
+  if settings_row.employee_number_include_month then
+    formatted := formatted || to_char(now(), 'MM');
+  end if;
+  formatted := formatted || lpad(settings_row.employee_number_next::text, greatest(coalesce(settings_row.employee_number_padding, 3), 1), '0');
+
+  update public.payroll_settings
+  set employee_number_next = settings_row.employee_number_next + 1
+  where user_id = auth.uid();
+
+  return formatted;
+end;
+$$;
+
+grant execute on function public.next_employee_number() to authenticated;
 
 -- Payroll runs + payslips (see migrate_payroll_runs.sql for the
 -- version-controlled description; kept in sync here for fresh installs).

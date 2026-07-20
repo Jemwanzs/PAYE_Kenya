@@ -405,6 +405,7 @@
           <table class="employee-table" id="employeeTable">
             <thead>
               <tr>
+                <th>Emp #</th>
                 <th>Name</th>
                 <th>Position</th>
                 <th>Department</th>
@@ -421,6 +422,7 @@
       <form class="employees-form" id="employeeFormView" hidden>
         <div class="panel-header">
           <h2 id="employeeFormTitle">Add employee</h2>
+          <span class="status-pill status-active" id="employeeFormNumber" hidden></span>
           <button type="button" class="ghost-button" id="employeeFormBackBtn">
             <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
             Back to directory
@@ -436,15 +438,33 @@
             <label><span>Last name <span class="required-asterisk">*</span></span><input type="text" id="employeeLastName" required /></label>
             <label>Email <input type="email" id="employeeEmail" /></label>
             <label>Phone <input type="text" id="employeePhone" /></label>
-            <label>Job position
-              <select id="employeeJobPosition"><option value="">— Select —</option></select>
-            </label>
-            <label>Department
-              <select id="employeeDepartment"><option value="">— Select —</option></select>
-            </label>
-            <label>Sub department
-              <select id="employeeSubDepartment"><option value="">— Select —</option></select>
-            </label>
+            <div class="classification-dropdown lookup-dropdown" id="employeeJobPositionDropdown">
+              <span class="field-label">Job position</span>
+              <button type="button" class="classification-trigger" id="employeeJobPositionTrigger" aria-expanded="false">
+                <span class="classification-trigger-text" id="employeeJobPositionTriggerText">— Select —</span>
+                <svg class="classification-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="classification-panel" id="employeeJobPositionPanel" hidden></div>
+              <select id="employeeJobPosition" class="visually-hidden" tabindex="-1" aria-hidden="true"><option value="">— Select —</option></select>
+            </div>
+            <div class="classification-dropdown lookup-dropdown" id="employeeDepartmentDropdown">
+              <span class="field-label">Department</span>
+              <button type="button" class="classification-trigger" id="employeeDepartmentTrigger" aria-expanded="false">
+                <span class="classification-trigger-text" id="employeeDepartmentTriggerText">— Select —</span>
+                <svg class="classification-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="classification-panel" id="employeeDepartmentPanel" hidden></div>
+              <select id="employeeDepartment" class="visually-hidden" tabindex="-1" aria-hidden="true"><option value="">— Select —</option></select>
+            </div>
+            <div class="classification-dropdown lookup-dropdown" id="employeeSubDepartmentDropdown">
+              <span class="field-label">Sub department</span>
+              <button type="button" class="classification-trigger" id="employeeSubDepartmentTrigger" aria-expanded="false">
+                <span class="classification-trigger-text" id="employeeSubDepartmentTriggerText">— Select —</span>
+                <svg class="classification-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="classification-panel" id="employeeSubDepartmentPanel" hidden></div>
+              <select id="employeeSubDepartment" class="visually-hidden" tabindex="-1" aria-hidden="true"><option value="">— Select —</option></select>
+            </div>
             <div class="classification-dropdown" id="employeeTypeDropdown">
               <span class="field-label">Employee type</span>
               <button type="button" class="classification-trigger" id="employeeTypeTrigger" aria-expanded="false" aria-controls="employeeTypePanel">
@@ -531,10 +551,16 @@
       <div class="employees-directory" id="payrollListView">
         <div class="panel-header">
           <h2>Payroll</h2>
-          <button type="button" class="primary-button" id="newPayrollRunBtn">
-            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-            New payroll run
-          </button>
+          <div class="hero-actions">
+            <button type="button" class="ghost-button" id="refreshPayrollBtn">
+              <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+              Refresh
+            </button>
+            <button type="button" class="primary-button" id="newPayrollRunBtn">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              New payroll run
+            </button>
+          </div>
         </div>
         <p class="hint" id="payrollRunsEmptyState" hidden>No payroll runs yet.</p>
         <div class="employee-table-wrap">
@@ -550,10 +576,16 @@
       <div class="employees-form" id="payrollNewView" hidden>
         <div class="panel-header">
           <h2>New payroll run</h2>
-          <button type="button" class="ghost-button" id="payrollNewBackBtn">
-            <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            Back to payroll
-          </button>
+          <div class="hero-actions">
+            <button type="button" class="ghost-button" id="syncPayrollEmployeesBtn">
+              <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+              Sync employees
+            </button>
+            <button type="button" class="ghost-button" id="payrollNewBackBtn">
+              <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              Back to payroll
+            </button>
+          </div>
         </div>
         <p class="auth-error" id="payrollNewError" hidden></p>
 
@@ -569,7 +601,7 @@
 
         <details open class="input-group">
           <summary><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>Eligible employees</span></summary>
-          <p class="hint">Employees without a contract start date, or whose contract starts after this period ends, are excluded automatically.</p>
+          <p class="hint">Employees without a contract start date, or whose contract starts after this period ends, are excluded automatically. Use "Sync employees" (top right) to pick up employees, benefits, or deductions added after this page opened.</p>
           <div id="payrollEligibleList" class="payroll-employee-list"></div>
         </details>
 
@@ -686,6 +718,18 @@
             <input type="text" id="subDepartmentInput" placeholder="e.g. Backend" />
             <button type="button" class="ghost-button" data-lookup-add="sub_departments">Add</button>
           </div>
+        </details>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h6"/></svg><span>Employee numbering</span></summary>
+          <p class="hint">Every new employee is assigned a unique number automatically when saved. Configure the format here.</p>
+          <div class="field-grid two-col">
+            <label>Prefix <input type="text" id="settingsEmpNumPrefix" placeholder="e.g. EMP" /></label>
+            <label>Digits (zero-padded) <input type="number" id="settingsEmpNumPadding" min="1" max="8" step="1" /></label>
+            <label><input type="checkbox" id="settingsEmpNumIncludeYear" /> Include current year (e.g. 2026)</label>
+            <label><input type="checkbox" id="settingsEmpNumIncludeMonth" /> Include current month (e.g. 07)</label>
+          </div>
+          <p class="hint">Preview of the next number: <strong id="settingsEmpNumPreview">EMP001</strong></p>
         </details>
 
         <details open class="input-group">

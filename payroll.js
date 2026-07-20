@@ -7,6 +7,8 @@ const newView = document.getElementById('payrollNewView');
 const detailView = document.getElementById('payrollDetailView');
 
 const newPayrollRunBtn = document.getElementById('newPayrollRunBtn');
+const refreshPayrollBtn = document.getElementById('refreshPayrollBtn');
+const syncPayrollEmployeesBtn = document.getElementById('syncPayrollEmployeesBtn');
 const payrollRunsTableBody = document.getElementById('payrollRunsTableBody');
 const payrollRunsEmptyState = document.getElementById('payrollRunsEmptyState');
 
@@ -119,6 +121,12 @@ async function loadPayrollRuns() {
   payrollRunsTableBody.innerHTML = rows.join('');
 }
 
+async function syncEmployees() {
+  const { data: employees } = await supabase.from('employees').select('*').order('first_name');
+  employeesCache = employees || [];
+  renderEligibilityLists();
+}
+
 newPayrollRunBtn.addEventListener('click', async () => {
   payrollNewError.hidden = true;
   payrollPeriodLabel.value = '';
@@ -127,9 +135,25 @@ newPayrollRunBtn.addEventListener('click', async () => {
   listView.hidden = true;
   newView.hidden = false;
 
-  const { data: employees } = await supabase.from('employees').select('*').order('first_name');
-  employeesCache = employees || [];
-  renderEligibilityLists();
+  await syncEmployees();
+});
+
+refreshPayrollBtn.addEventListener('click', async () => {
+  refreshPayrollBtn.disabled = true;
+  try {
+    await loadPayrollRuns();
+  } finally {
+    refreshPayrollBtn.disabled = false;
+  }
+});
+
+syncPayrollEmployeesBtn.addEventListener('click', async () => {
+  syncPayrollEmployeesBtn.disabled = true;
+  try {
+    await syncEmployees();
+  } finally {
+    syncPayrollEmployeesBtn.disabled = false;
+  }
 });
 
 payrollPeriodEnd.addEventListener('change', renderEligibilityLists);

@@ -16,6 +16,7 @@ const statusFilterButtons = [...document.querySelectorAll('[data-status-filter]'
 const employeeTableBody = document.getElementById('employeeTableBody');
 const employeesEmptyState = document.getElementById('employeesEmptyState');
 const employeeFormTitle = document.getElementById('employeeFormTitle');
+const employeeFormNumber = document.getElementById('employeeFormNumber');
 const employeeFormBackBtn = document.getElementById('employeeFormBackBtn');
 const employeeFormError = document.getElementById('employeeFormError');
 const employeeForm = document.getElementById('employeeFormView');
@@ -46,6 +47,12 @@ const settingsInfo = document.getElementById('settingsInfo');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 const settingsPage = document.getElementById('settingsPage');
 
+const settingsEmpNumPrefix = document.getElementById('settingsEmpNumPrefix');
+const settingsEmpNumPadding = document.getElementById('settingsEmpNumPadding');
+const settingsEmpNumIncludeYear = document.getElementById('settingsEmpNumIncludeYear');
+const settingsEmpNumIncludeMonth = document.getElementById('settingsEmpNumIncludeMonth');
+const settingsEmpNumPreview = document.getElementById('settingsEmpNumPreview');
+
 const LOOKUP_LIST_ELS = { job_positions: 'jobPositionsList', departments: 'departmentsList', sub_departments: 'subDepartmentsList' };
 const LOOKUP_INPUT_ELS = { job_positions: 'jobPositionInput', departments: 'departmentInput', sub_departments: 'subDepartmentInput' };
 
@@ -63,7 +70,10 @@ function defaultSettings() {
     insurance_relief_cap: 5000, telephone_threshold: 5000, meals_threshold: 5000,
     allowable_deduction_cap: 30000, per_diem_threshold: 10000, days_in_month: 30,
     secondary_flat_rate: 35, contractor_wht_rate: 5, pwd_exemption: 150000,
-    job_positions: [], departments: [], sub_departments: []
+    job_positions: [], departments: [], sub_departments: [],
+    employee_number_prefix: 'EMP', employee_number_padding: 3,
+    employee_number_include_year: false, employee_number_include_month: false,
+    employee_number_next: 1
   };
 }
 
@@ -108,23 +118,74 @@ function attachMoneyBlurFormatting(scope) {
   });
 }
 
-function fillLookupSelect(selectId, items, ensureValue) {
-  const select = document.getElementById(selectId);
-  const options = [...items];
-  // Never silently drop an employee's existing value if it was since
-  // removed from the canonical list in Settings — editing them would
-  // otherwise overwrite it with blank on save.
-  if (ensureValue && !options.includes(ensureValue)) options.push(ensureValue);
-  select.innerHTML = '<option value="">— Select —</option>' +
-    options.map(item => `<option value="${item}">${item}</option>`).join('');
-  if (ensureValue) select.value = ensureValue;
+// Reusable dropdown controller — same open/close/select behavior and
+// visual style as the Employee Type picker, but for a flat, dynamic list
+// of plain strings (job positions/departments/sub-departments) instead of
+// a fixed set of icon+description options.
+function createLookupDropdown(fieldId) {
+  const dropdown = document.getElementById(`${fieldId}Dropdown`);
+  const trigger = document.getElementById(`${fieldId}Trigger`);
+  const triggerText = document.getElementById(`${fieldId}TriggerText`);
+  const panel = document.getElementById(`${fieldId}Panel`);
+  const select = document.getElementById(fieldId);
+
+  function close() {
+    panel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  }
+  function open() {
+    panel.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+  }
+  function sync() {
+    const value = select.value;
+    triggerText.textContent = value || '— Select —';
+    panel.querySelectorAll('.classification-option').forEach(btn => {
+      btn.classList.toggle('is-selected', btn.dataset.value === value);
+    });
+  }
+
+  trigger.addEventListener('click', () => { panel.hidden ? open() : close(); });
+  document.addEventListener('click', event => {
+    if (!dropdown.contains(event.target)) close();
+  });
+
+  function setOptions(items, ensureValue) {
+    const options = [...items];
+    // Never silently drop an employee's existing value if it was since
+    // removed from the canonical list in Settings — editing them would
+    // otherwise overwrite it with blank on save.
+    if (ensureValue && !options.includes(ensureValue)) options.push(ensureValue);
+
+    select.innerHTML = '<option value="">— Select —</option>' +
+      options.map(item => `<option value="${item}">${item}</option>`).join('');
+    select.value = ensureValue || '';
+
+    panel.innerHTML = `<button type="button" class="classification-option simple" data-value="">— Select —</button>` +
+      options.map(item => `<button type="button" class="classification-option simple" data-value="${item}">${item}</button>`).join('');
+    panel.querySelectorAll('.classification-option').forEach(btn => {
+      btn.addEventListener('click', () => {
+        select.value = btn.dataset.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        sync();
+        close();
+      });
+    });
+    sync();
+  }
+
+  return { setOptions };
 }
+
+const jobPositionDropdown = createLookupDropdown('employeeJobPosition');
+const departmentDropdown = createLookupDropdown('employeeDepartment');
+const subDepartmentDropdown = createLookupDropdown('employeeSubDepartment');
 
 async function populateJobSelects(employee) {
   const settings = await loadSettings();
-  fillLookupSelect('employeeJobPosition', settings.job_positions || [], employee?.job_position);
-  fillLookupSelect('employeeDepartment', settings.departments || [], employee?.department);
-  fillLookupSelect('employeeSubDepartment', settings.sub_departments || [], employee?.sub_department);
+  jobPositionDropdown.setOptions(settings.job_positions || [], employee?.job_position);
+  departmentDropdown.setOptions(settings.departments || [], employee?.department);
+  subDepartmentDropdown.setOptions(settings.sub_departments || [], employee?.sub_department);
 }
 
 function closeEmployeeTypePanel() {
@@ -174,6 +235,8 @@ function resetForm() {
   currentEmployeeId = null;
   currentEmployeeStatus = 'active';
   employeeFormTitle.textContent = 'Add employee';
+  employeeFormNumber.hidden = false;
+  employeeFormNumber.textContent = 'Number assigned on save';
   employeeTerminateBtn.hidden = true;
   employeeRehireBtn.hidden = true;
   employeeForm.reset();
@@ -191,6 +254,8 @@ function populateForm(employee) {
   currentEmployeeId = employee.id;
   currentEmployeeStatus = employee.status;
   employeeFormTitle.textContent = `${employee.first_name} ${employee.last_name}`;
+  employeeFormNumber.hidden = !employee.employee_number;
+  employeeFormNumber.textContent = employee.employee_number || '';
   employeeTerminateBtn.hidden = employee.status !== 'active';
   employeeRehireBtn.hidden = employee.status !== 'terminated';
 
@@ -285,6 +350,7 @@ function renderEmployeeTable(employees) {
 
   employeeTableBody.innerHTML = employees.map(emp => `
     <tr data-id="${emp.id}">
+      <td>${emp.employee_number || '—'}</td>
       <td>${emp.first_name} ${emp.last_name}</td>
       <td>${emp.job_position || '—'}</td>
       <td>${emp.department || '—'}</td>
@@ -342,7 +408,9 @@ employeeForm.addEventListener('submit', async event => {
       if (error) throw error;
     } else {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from('employees').insert({ ...payload, user_id: user.id });
+      const { data: employeeNumber, error: numberError } = await supabase.rpc('next_employee_number');
+      if (numberError) throw numberError;
+      const { error } = await supabase.from('employees').insert({ ...payload, employee_number: employeeNumber, user_id: user.id });
       if (error) throw error;
     }
     showDirectory();
@@ -436,7 +504,27 @@ function populateSettingsForm(s) {
   renderLookupList('job_positions', s.job_positions || []);
   renderLookupList('departments', s.departments || []);
   renderLookupList('sub_departments', s.sub_departments || []);
+  settingsEmpNumPrefix.value = s.employee_number_prefix ?? 'EMP';
+  settingsEmpNumPadding.value = s.employee_number_padding ?? 3;
+  settingsEmpNumIncludeYear.checked = !!s.employee_number_include_year;
+  settingsEmpNumIncludeMonth.checked = !!s.employee_number_include_month;
+  updateEmployeeNumberPreview(s.employee_number_next ?? 1);
 }
+
+function updateEmployeeNumberPreview(nextNumber = cachedSettings?.employee_number_next ?? 1) {
+  const prefix = settingsEmpNumPrefix.value.trim();
+  const padding = Math.max(toNumber(settingsEmpNumPadding.value) || 3, 1);
+  const now = new Date();
+  let preview = prefix;
+  if (settingsEmpNumIncludeYear.checked) preview += String(now.getFullYear());
+  if (settingsEmpNumIncludeMonth.checked) preview += String(now.getMonth() + 1).padStart(2, '0');
+  preview += String(nextNumber).padStart(padding, '0');
+  settingsEmpNumPreview.textContent = preview;
+}
+
+[settingsEmpNumPrefix, settingsEmpNumPadding, settingsEmpNumIncludeYear, settingsEmpNumIncludeMonth].forEach(el => {
+  el.addEventListener('input', () => updateEmployeeNumberPreview());
+});
 
 function setSettingsPageBusy(busy) {
   settingsPage.querySelectorAll('input, textarea, select, button').forEach(el => { el.disabled = busy; });
@@ -506,6 +594,10 @@ saveSettingsBtn.addEventListener('click', async () => {
     job_positions: cachedSettings?.job_positions || [],
     departments: cachedSettings?.departments || [],
     sub_departments: cachedSettings?.sub_departments || [],
+    employee_number_prefix: settingsEmpNumPrefix.value.trim() || 'EMP',
+    employee_number_padding: Math.max(toNumber(settingsEmpNumPadding.value) || 3, 1),
+    employee_number_include_year: settingsEmpNumIncludeYear.checked,
+    employee_number_include_month: settingsEmpNumIncludeMonth.checked,
     updated_at: new Date().toISOString()
   };
 

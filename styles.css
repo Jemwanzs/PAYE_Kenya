@@ -506,6 +506,9 @@ input:disabled {
 
 .option-icon { font-size: 1.15rem; line-height: 1; flex: none; }
 
+.classification-option.simple { align-items: center; font-size: .88rem; font-weight: 700; color: var(--text); }
+.lookup-dropdown .classification-panel { max-height: 240px; overflow-y: auto; }
+
 .net-card-classification {
   display: block;
   margin-top: 4px;
