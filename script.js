@@ -13,12 +13,14 @@ const earningComponents = [
   { id: 'carBenefit', label: 'Car benefit' },
   { id: 'telephoneBenefit', label: 'Telephone / internet benefit' },
   { id: 'mealsBenefit', label: 'Meals benefit' },
+  { id: 'perDiem', label: 'Per diem' },
   { id: 'otherNonCashBenefit', label: 'Other non-cash benefit' }
 ];
 
 // Irregular/one-off components — excluded from the "recurring earnings"
-// pool that a PWD employee's tax-exempt amount is deducted from.
-const irregularComponentIds = ['oneOffAllowances', 'overtimePay'];
+// pool that a PWD employee's tax-exempt amount is deducted from, and off
+// by default for NSSF/SHIF/AHL since they aren't part of base pay.
+const irregularComponentIds = ['oneOffAllowances', 'overtimePay', 'perDiem'];
 
 const ids = [
   'basicPay',
@@ -26,7 +28,7 @@ const ids = [
   ...earningComponents.flatMap(item => [`${item.id}AffectsNssf`, `${item.id}AffectsShif`, `${item.id}AffectsAhl`]),
   'nssfRate','nssfUpperLimit','shifRate','shifMinimum','ahlEmployeeRate','ahlEmployerRate','personalRelief','nitaLevy',
   'employeePensionRate','employerPensionRate','lifeInsurance','educationInsurance','otherDeductions','insuranceReliefCap',
-  'telephoneThreshold','mealsThreshold','allowableDeductionCap',
+  'telephoneThreshold','mealsThreshold','allowableDeductionCap','perDiemThreshold','daysInMonth',
   'employeeClassification','secondaryFlatRate','contractorWhtRate','pwdExemption'
 ];
 
@@ -52,7 +54,7 @@ const classificationIrrelevantFields = {
   contractor: [
     'nssfRate', 'nssfUpperLimit', 'shifRate', 'shifMinimum', 'ahlEmployeeRate', 'ahlEmployerRate',
     'employeePensionRate', 'employerPensionRate', 'allowableDeductionCap', 'telephoneThreshold', 'mealsThreshold',
-    'personalRelief', 'insuranceReliefCap', 'secondaryFlatRate', 'pwdExemption', 'nitaLevy'
+    'perDiemThreshold', 'daysInMonth', 'personalRelief', 'insuranceReliefCap', 'secondaryFlatRate', 'pwdExemption', 'nitaLevy'
   ],
   pwd: ['secondaryFlatRate', 'contractorWhtRate']
 };
@@ -181,7 +183,7 @@ function calculate() {
 
   const directAllowances = values.regularAllowances + values.oneOffAllowances + values.bonusPay;
   const cashAllowances = values.transportAllowance + values.houseAllowance + values.overtimePay + values.otherCashAllowance;
-  const nonCashBenefits = values.carBenefit + values.telephoneBenefit + values.mealsBenefit + values.otherNonCashBenefit;
+  const nonCashBenefits = values.carBenefit + values.telephoneBenefit + values.mealsBenefit + values.perDiem + values.otherNonCashBenefit;
 
   const cashGross = basicPay + directAllowances + cashAllowances + values.cashBenefits;
   const displayGross = cashGross + nonCashBenefits;
@@ -224,7 +226,9 @@ function calculate() {
 
   const taxableTelephone = taxValues.telephoneBenefit <= toNumber(el.telephoneThreshold.value) ? 0 : taxValues.telephoneBenefit;
   const taxableMeals = taxValues.mealsBenefit <= toNumber(el.mealsThreshold.value) ? 0 : taxValues.mealsBenefit;
-  const taxableBenefits = taxValues.cashBenefits + taxValues.carBenefit + taxableTelephone + taxableMeals + taxValues.otherNonCashBenefit;
+  const perDiemExemptCap = toNumber(el.perDiemThreshold.value) * toNumber(el.daysInMonth.value);
+  const taxablePerDiem = taxValues.perDiem <= perDiemExemptCap ? 0 : taxValues.perDiem;
+  const taxableBenefits = taxValues.cashBenefits + taxValues.carBenefit + taxableTelephone + taxableMeals + taxablePerDiem + taxValues.otherNonCashBenefit;
   const taxDirectAllowances = taxValues.regularAllowances + taxValues.oneOffAllowances + taxValues.bonusPay;
   const taxCashAllowances = taxValues.transportAllowance + taxValues.houseAllowance + taxValues.overtimePay + taxValues.otherCashAllowance;
   const taxableCashEarnings = taxBasicPay + taxDirectAllowances + taxCashAllowances;
@@ -363,7 +367,7 @@ el.employeeClassification.addEventListener('change', calculate);
 
 function restoreDefaultStatutoryToggles() {
   earningComponents.forEach(item => {
-    const affectsByDefault = !['oneOffAllowances', 'overtimePay'].includes(item.id);
+    const affectsByDefault = !irregularComponentIds.includes(item.id);
     ['Nssf', 'Shif', 'Ahl'].forEach(stat => {
       const checkbox = el[`${item.id}Affects${stat}`];
       if (checkbox) checkbox.checked = affectsByDefault;
@@ -386,6 +390,8 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   el.telephoneThreshold.value = rawMoney(5000);
   el.mealsThreshold.value = rawMoney(5000);
   el.allowableDeductionCap.value = rawMoney(30000);
+  el.perDiemThreshold.value = rawMoney(10000);
+  el.daysInMonth.value = 30;
   el.employeeClassification.value = 'primary';
   el.secondaryFlatRate.value = 35;
   el.contractorWhtRate.value = 5;

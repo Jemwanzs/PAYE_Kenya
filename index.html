@@ -216,8 +216,11 @@
           <div class="field-grid two-col">
             <label>Telephone threshold <input data-money id="telephoneThreshold" type="text" value="5,000.00" /></label>
             <label>Meals threshold <input data-money id="mealsThreshold" type="text" value="5,000.00" /></label>
-            <label>Allowable deduction cap <input data-money id="allowableDeductionCap" type="text" value="30,000.00" /></label>
+            <label>Pension Allowable <input data-money id="allowableDeductionCap" type="text" value="30,000.00" /></label>
+            <label>Per Diem threshold (per day) <input data-money id="perDiemThreshold" type="text" value="10,000.00" /></label>
+            <label>Days in this payroll month <input id="daysInMonth" type="number" step="1" min="1" max="31" value="30" /></label>
           </div>
+          <p class="hint">Per diem is fully tax-exempt up to the per-day threshold &times; days in the month (e.g. KES 10,000 &times; 31 days in March = KES 310,000); above that, the full amount becomes taxable.</p>
         </details>
 
         <button type="button" class="primary-button proceed-button" id="proceedBtn">
@@ -303,6 +306,10 @@
             <div class="earning-line">
               <label>Meals benefit <input data-money id="mealsBenefit" type="text" inputmode="decimal" placeholder="0.00" /></label>
               <div class="stat-toggles"><span>Affects</span><label><input type="checkbox" id="mealsBenefitAffectsNssf" checked /> <abbr title="National Social Security Fund">NSSF</abbr></label><label><input type="checkbox" id="mealsBenefitAffectsShif" checked /> <abbr title="Social Health Insurance Fund">SHIF</abbr></label><label><input type="checkbox" id="mealsBenefitAffectsAhl" checked /> <abbr title="Affordable Housing Levy">AHL</abbr></label></div>
+            </div>
+            <div class="earning-line">
+              <label>Per diem <input data-money id="perDiem" type="text" inputmode="decimal" placeholder="0.00" /></label>
+              <div class="stat-toggles"><span>Affects</span><label><input type="checkbox" id="perDiemAffectsNssf" /> <abbr title="National Social Security Fund">NSSF</abbr></label><label><input type="checkbox" id="perDiemAffectsShif" /> <abbr title="Social Health Insurance Fund">SHIF</abbr></label><label><input type="checkbox" id="perDiemAffectsAhl" /> <abbr title="Affordable Housing Levy">AHL</abbr></label></div>
             </div>
             <div class="earning-line">
               <label>Other non-cash benefit <input data-money id="otherNonCashBenefit" type="text" inputmode="decimal" placeholder="0.00" /></label>
