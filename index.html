@@ -21,6 +21,18 @@
         <p class="hero-copy">Configure <abbr title="National Social Security Fund">NSSF</abbr>, <abbr title="Social Health Insurance Fund">SHIF</abbr>, <abbr title="Affordable Housing Levy">AHL</abbr>, allowances, benefits, pension and insurance reliefs in one clean payroll simulation.</p>
       </div>
       <div class="hero-actions">
+        <div class="admin-preview-dropdown" id="adminPreviewDropdown" hidden>
+          <button type="button" class="ghost-button" id="adminPreviewBtn" aria-expanded="false" aria-controls="adminPreviewMenu">
+            🛠 Preview screens
+          </button>
+          <div class="admin-preview-menu" id="adminPreviewMenu" hidden>
+            <button type="button" data-preview="purchase">Purchase modal</button>
+            <button type="button" data-preview="auth">Auth screen</button>
+            <button type="button" data-preview="recovery">Recovery screen</button>
+            <button type="button" data-preview="finalizing">Finalizing screen</button>
+            <button type="button" data-preview="exit" class="is-exit">Exit preview</button>
+          </div>
+        </div>
         <button type="button" class="ghost-button" id="buyMoreBtn" hidden>
           Buy more time
         </button>
@@ -352,6 +364,10 @@
       <p class="eyebrow"><span class="eyebrow-dot"></span>Get access</p>
       <h2 id="purchaseTitle">Your free trial has ended</h2>
       <p class="hero-copy" id="purchaseSubtitle">Buy a day-pass to keep using the calculator &mdash; billed in KES via Paystack (card or M-Pesa).</p>
+      <div class="why-buy">
+        <strong>Why should you buy now?</strong>
+        <p>Run payroll from a simple payslip to fully complex cases &mdash; cash and non-cash benefits, statutory tax rules already configured with sensible defaults but editable wherever you need, for every employee type: Primary, Secondary, Contractor, and PWD.</p>
+      </div>
       <div class="package-grid" id="packageGrid"></div>
       <p class="auth-error" id="purchaseError" hidden></p>
     </div>

@@ -66,6 +66,9 @@ const purchaseTitle = document.getElementById('purchaseTitle');
 const purchaseSubtitle = document.getElementById('purchaseSubtitle');
 const purchaseError = document.getElementById('purchaseError');
 const packageGrid = document.getElementById('packageGrid');
+const adminPreviewDropdown = document.getElementById('adminPreviewDropdown');
+const adminPreviewBtn = document.getElementById('adminPreviewBtn');
+const adminPreviewMenu = document.getElementById('adminPreviewMenu');
 
 // Detected synchronously from the URL so recovery mode is set before
 // Supabase's async client init has a chance to race renderForSession() and
@@ -142,6 +145,7 @@ function renderAccess(access) {
   resetBtn.hidden = !access.hasAccess;
   printBtn.hidden = !access.hasAccess;
   buyMoreBtn.hidden = access.isAdmin;
+  adminPreviewDropdown.hidden = !access.isAdmin;
 
   if (access.isAdmin) {
     accessBanner.hidden = false;
@@ -170,6 +174,7 @@ async function renderForSession() {
     resetBtn.hidden = true;
     printBtn.hidden = true;
     buyMoreBtn.hidden = true;
+    adminPreviewDropdown.hidden = true;
     accessBanner.hidden = true;
     setPurchaseOverlay(false);
     showScreen('auth');
@@ -222,6 +227,38 @@ packageGrid.addEventListener('click', async event => {
 
 buyMoreBtn.addEventListener('click', () => setPurchaseOverlay(true, { forced: false }));
 purchaseCloseBtn.addEventListener('click', () => setPurchaseOverlay(false));
+
+function closeAdminPreviewMenu() {
+  adminPreviewMenu.hidden = true;
+  adminPreviewBtn.setAttribute('aria-expanded', 'false');
+}
+
+adminPreviewBtn.addEventListener('click', () => {
+  const opening = adminPreviewMenu.hidden;
+  adminPreviewMenu.hidden = !opening;
+  adminPreviewBtn.setAttribute('aria-expanded', String(opening));
+});
+
+adminPreviewMenu.addEventListener('click', event => {
+  const btn = event.target.closest('button[data-preview]');
+  if (!btn) return;
+  closeAdminPreviewMenu();
+
+  const target = btn.dataset.preview;
+  if (target === 'exit') {
+    renderForSession();
+    return;
+  }
+  if (target === 'purchase') {
+    setPurchaseOverlay(true, { forced: false });
+    return;
+  }
+  showScreen(target);
+});
+
+document.addEventListener('click', event => {
+  if (!adminPreviewDropdown.hidden && !adminPreviewDropdown.contains(event.target)) closeAdminPreviewMenu();
+});
 
 document.querySelectorAll('.password-toggle').forEach(btn => {
   const input = document.getElementById(btn.dataset.toggleFor);
