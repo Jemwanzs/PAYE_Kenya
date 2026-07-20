@@ -508,10 +508,31 @@ input:disabled {
 
 .classification-option.simple { align-items: center; font-size: .88rem; font-weight: 700; color: var(--text); }
 .lookup-dropdown .classification-panel { max-height: 240px; overflow-y: auto; }
-.payslip-detail-modal { max-width: 760px; }
 .purchase-modal-footer { margin-top: 16px; text-align: center; }
+
 .payroll-detail-row { cursor: pointer; }
 .payroll-detail-row:hover { background: rgba(242, 140, 24, .08); }
+.payroll-detail-row.is-expanded { background: rgba(242, 140, 24, .1); }
+.row-expand-icon {
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform .15s ease;
+  color: var(--muted);
+}
+.payroll-detail-row.is-expanded .row-expand-icon { transform: rotate(90deg); color: var(--brand); }
+.payroll-detail-expand-row td {
+  background: var(--card-2);
+  padding: 16px clamp(10px, 3vw, 20px) 20px;
+}
+.payroll-detail-expand-row .breakdown-card { margin-top: 0; }
+.payroll-detail-expand-row .breakdown-card + .breakdown-card { margin-top: 14px; }
 
 .net-card-classification {
   display: block;

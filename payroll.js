@@ -36,9 +36,6 @@ const recalcRunBtn = document.getElementById('recalcRunBtn');
 const editRunBtn = document.getElementById('editRunBtn');
 const recallRunBtn = document.getElementById('recallRunBtn');
 
-const payslipDetailOverlay = document.getElementById('payslipDetailOverlay');
-const payslipDetailCloseBtn = document.getElementById('payslipDetailCloseBtn');
-
 let payrollRunsLoaded = false;
 let currentRunId = null;
 let currentRunStatus = null;
@@ -397,7 +394,7 @@ async function openRun(runId) {
 
   payrollDetailTableBody.innerHTML = rows.map(p => `
     <tr class="payroll-detail-row" data-payslip-id="${p.id}">
-      <td>${p.employee_snapshot.first_name} ${p.employee_snapshot.last_name}${p.is_final_dues ? ' <small>(final dues)</small>' : ''}</td>
+      <td><svg class="row-expand-icon" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>${p.employee_snapshot.first_name} ${p.employee_snapshot.last_name}${p.is_final_dues ? ' <small>(final dues)</small>' : ''}</td>
       <td>${classificationLabels[p.employee_snapshot.employee_type] || p.employee_snapshot.employee_type}</td>
       <td>${money(p.results.displayGross)}</td>
       <td>${money(p.results.paye)}</td>
@@ -528,74 +525,103 @@ editRunBtn.addEventListener('click', async () => {
   }
 });
 
+// Single source of truth for a payslip's line items, shared by the
+// printable payslip and the inline "expand a row" breakdown below.
+// Each row carries `highlight` (always kept, even at zero — it's a
+// subtotal like Gross/PAYE/Net) vs. a plain line item (hidden when
+// its value rounds to zero, so an unused benefit/deduction doesn't
+// clutter the breakdown).
+function payslipBreakdownSections(payslip) {
+  const r = payslip.results;
+  const emp = payslip.employee_snapshot;
+  const comp = payslip.compensation_snapshot || {};
+  const isContractor = emp.employee_type === 'contractor';
+
+  const earnings = [
+    { label: 'Basic pay', value: comp.basicPay || 0 },
+    { label: 'Direct allowances', value: r.directAllowances },
+    { label: 'Cash allowances breakdown total', value: r.cashAllowances },
+    { label: 'Taxable benefits used', value: r.taxableBenefits },
+    { label: 'Gross pay displayed', value: r.displayGross, highlight: true }
+  ];
+
+  const taxRows = isContractor
+    ? [{ label: 'WHT', value: r.wht, highlight: true }]
+    : [
+        { label: 'Income tax before reliefs', value: r.incomeTax },
+        { label: 'Personal relief', value: r.appliedPersonalRelief },
+        { label: 'Insurance relief', value: r.insuranceRelief },
+        { label: 'PAYE payable', value: r.paye, highlight: true },
+        { label: 'WHT', value: r.wht }
+      ];
+  const statutoryBaseRows = isContractor ? [] : [
+    { label: 'PWD exempt amount applied', value: r.pwdReductionApplied },
+    { label: 'NSSF Base', value: r.nssfBase },
+    { label: 'SHIF Base', value: r.shifBase },
+    { label: 'AHL Base', value: r.ahlBase }
+  ];
+
+  const deductions = [
+    ...statutoryBaseRows,
+    { label: 'NSSF employee', value: r.nssfEmployee },
+    { label: 'SHIF employee', value: r.shif },
+    { label: 'AHL employee', value: r.ahlEmployee },
+    { label: 'Employee pension', value: r.employeePension },
+    { label: 'NSSF + pension allowable deductions', value: r.nssfPensionAllowable, highlight: true },
+    { label: 'Total tax-deductible statutory deductions', value: r.totalTaxAllowableDeductions },
+    ...taxRows,
+    { label: 'Insurance premiums deducted', value: r.insurancePremiums },
+    { label: 'Other deductions', value: r.otherDeductions }
+  ];
+
+  const employer = [
+    { label: 'NSSF employer', value: r.nssfEmployer },
+    { label: 'AHL employer', value: r.ahlEmployer },
+    { label: 'Employer pension', value: r.employerPension },
+    { label: 'NITA levy', value: r.nitaLevy },
+    { label: 'Total employer cost add-ons', value: r.nssfEmployer + r.ahlEmployer + r.employerPension + r.nitaLevy, highlight: true }
+  ];
+
+  return {
+    header: {
+      title: `${emp.first_name} ${emp.last_name} — ${payslip.period_label || ''}`,
+      subtitle: [emp.job_position, emp.department, classificationLabels[emp.employee_type]].filter(Boolean).join(' · '),
+      netPay: r.netPay,
+      rate: `Effective PAYE rate: ${r.effectiveTaxRate.toFixed(2)}%`,
+      gross: r.displayGross,
+      taxable: r.taxablePay,
+      paye: r.paye,
+      totalDeductions: r.employeeDeductions
+    },
+    earnings,
+    deductions,
+    netRow: { label: 'Net pay', value: r.netPay, highlight: true },
+    employer
+  };
+}
+
 function printRow(label, value, highlight = false) {
   const zero = !highlight && Math.round(value * 100) === 0;
   return `<div class="result-row ${highlight ? 'highlight' : ''} ${zero ? 'zero-row' : ''}"><span>${label}</span><strong>${money(value)}</strong></div>`;
 }
 
 function populatePayslipFields(payslip, prefix) {
-  const r = payslip.results;
-  const emp = payslip.employee_snapshot;
-  const comp = payslip.compensation_snapshot || {};
-  const isContractor = emp.employee_type === 'contractor';
+  const s = payslipBreakdownSections(payslip);
   const el = id => document.getElementById(`${prefix}${id}`);
+  const rowsHtml = rows => rows.map(row => printRow(row.label, row.value, row.highlight)).join('');
 
-  el('Title').textContent = `${emp.first_name} ${emp.last_name} — ${payslip.period_label || ''}`;
-  el('Subtitle').textContent =
-    [emp.job_position, emp.department, classificationLabels[emp.employee_type]].filter(Boolean).join(' · ');
-  el('NetPay').textContent = money(r.netPay);
-  el('Rate').textContent = `Effective PAYE rate: ${r.effectiveTaxRate.toFixed(2)}%`;
-  el('Gross').textContent = money(r.displayGross);
-  el('Taxable').textContent = money(r.taxablePay);
-  el('Paye').textContent = money(r.paye);
-  el('TotalDeductions').textContent = money(r.employeeDeductions);
-
-  el('Earnings').innerHTML = [
-    printRow('Basic pay', comp.basicPay || 0),
-    printRow('Direct allowances', r.directAllowances),
-    printRow('Cash allowances breakdown total', r.cashAllowances),
-    printRow('Taxable benefits used', r.taxableBenefits),
-    printRow('Gross pay displayed', r.displayGross, true)
-  ].join('');
-
-  const taxRows = isContractor
-    ? [printRow('WHT', r.wht, true)]
-    : [
-        printRow('Income tax before reliefs', r.incomeTax),
-        printRow('Personal relief', r.appliedPersonalRelief),
-        printRow('Insurance relief', r.insuranceRelief),
-        printRow('PAYE payable', r.paye, true),
-        printRow('WHT', r.wht)
-      ];
-  const statutoryBaseRows = isContractor ? [] : [
-    printRow('PWD exempt amount applied', r.pwdReductionApplied),
-    printRow('NSSF Base', r.nssfBase),
-    printRow('SHIF Base', r.shifBase),
-    printRow('AHL Base', r.ahlBase)
-  ];
-
-  el('Deductions').innerHTML = [
-    ...statutoryBaseRows,
-    printRow('NSSF employee', r.nssfEmployee),
-    printRow('SHIF employee', r.shif),
-    printRow('AHL employee', r.ahlEmployee),
-    printRow('Employee pension', r.employeePension),
-    printRow('NSSF + pension allowable deductions', r.nssfPensionAllowable, true),
-    printRow('Total tax-deductible statutory deductions', r.totalTaxAllowableDeductions),
-    ...taxRows,
-    printRow('Insurance premiums deducted', r.insurancePremiums),
-    printRow('Other deductions', r.otherDeductions)
-  ].join('');
-
-  el('NetRow').innerHTML = printRow('Net pay', r.netPay, true);
-
-  el('EmployerRows').innerHTML = [
-    printRow('NSSF employer', r.nssfEmployer),
-    printRow('AHL employer', r.ahlEmployer),
-    printRow('Employer pension', r.employerPension),
-    printRow('NITA levy', r.nitaLevy),
-    printRow('Total employer cost add-ons', r.nssfEmployer + r.ahlEmployer + r.employerPension + r.nitaLevy, true)
-  ].join('');
+  el('Title').textContent = s.header.title;
+  el('Subtitle').textContent = s.header.subtitle;
+  el('NetPay').textContent = money(s.header.netPay);
+  el('Rate').textContent = s.header.rate;
+  el('Gross').textContent = money(s.header.gross);
+  el('Taxable').textContent = money(s.header.taxable);
+  el('Paye').textContent = money(s.header.paye);
+  el('TotalDeductions').textContent = money(s.header.totalDeductions);
+  el('Earnings').innerHTML = rowsHtml(s.earnings);
+  el('Deductions').innerHTML = rowsHtml(s.deductions);
+  el('NetRow').innerHTML = printRow(s.netRow.label, s.netRow.value, s.netRow.highlight);
+  el('EmployerRows').innerHTML = rowsHtml(s.employer);
 }
 
 function printPayslip(payslip) {
@@ -608,15 +634,44 @@ function printPayslip(payslip) {
   wrap.hidden = true;
 }
 
-function showPayslipDetail(payslip) {
-  populatePayslipFields(payslip, 'payslipDetail');
-  payslipDetailOverlay.hidden = false;
+// Non-highlight rows whose value rounds to zero are dropped entirely on
+// screen (not just visually hidden) so an inline breakdown only shows
+// the components that actually apply to this employee.
+function inlineBreakdownRows(rows) {
+  return rows.filter(row => row.highlight || Math.round(row.value * 100) !== 0);
 }
 
-payslipDetailCloseBtn.addEventListener('click', () => { payslipDetailOverlay.hidden = true; });
-payslipDetailOverlay.addEventListener('click', event => {
-  if (event.target === payslipDetailOverlay) payslipDetailOverlay.hidden = true;
-});
+function inlineRow({ label, value, highlight = false }) {
+  return `<div class="result-row ${highlight ? 'highlight' : ''}"><span>${label}</span><strong>${money(value)}</strong></div>`;
+}
+
+function renderInlineBreakdown(payslip) {
+  const s = payslipBreakdownSections(payslip);
+  const earnings = inlineBreakdownRows(s.earnings);
+  const deductions = inlineBreakdownRows(s.deductions);
+  const employer = inlineBreakdownRows(s.employer);
+
+  return `
+    <div class="breakdown-card breakdown-computation">
+      <div class="breakdown-columns">
+        <div class="breakdown-col"><h3>Earnings</h3>${earnings.map(inlineRow).join('')}</div>
+        <div class="breakdown-col"><h3>Deductions &amp; reliefs</h3>${deductions.map(inlineRow).join('')}</div>
+      </div>
+      <div class="breakdown-net">${inlineRow(s.netRow)}</div>
+    </div>
+    <div class="breakdown-card employer-card">
+      <h2>Employer contributions</h2>
+      ${employer.map(inlineRow).join('')}
+    </div>
+  `;
+}
+
+function collapseExpandedPayslipRow() {
+  const expandRow = payrollDetailTableBody.querySelector('tr.payroll-detail-expand-row');
+  if (expandRow) expandRow.remove();
+  const openRow = payrollDetailTableBody.querySelector('tr.payroll-detail-row.is-expanded');
+  if (openRow) openRow.classList.remove('is-expanded');
+}
 
 payrollDetailTableBody.addEventListener('click', event => {
   const payslips = JSON.parse(payrollDetailTableBody.dataset.payslips || '[]');
@@ -628,11 +683,24 @@ payrollDetailTableBody.addEventListener('click', event => {
     return;
   }
 
-  const row = event.target.closest('tr[data-payslip-id]');
-  if (row) {
-    const payslip = payslips.find(p => p.id === row.dataset.payslipId);
-    if (payslip) showPayslipDetail(payslip);
-  }
+  const row = event.target.closest('tr.payroll-detail-row');
+  if (!row) return;
+
+  const alreadyOpen = row.classList.contains('is-expanded');
+  collapseExpandedPayslipRow();
+  if (alreadyOpen) return;
+
+  const payslip = payslips.find(p => p.id === row.dataset.payslipId);
+  if (!payslip) return;
+
+  row.classList.add('is-expanded');
+  const expandRow = document.createElement('tr');
+  expandRow.className = 'payroll-detail-expand-row';
+  const cell = document.createElement('td');
+  cell.colSpan = 6;
+  cell.innerHTML = renderInlineBreakdown(payslip);
+  expandRow.appendChild(cell);
+  row.after(expandRow);
 });
 
 document.addEventListener('app:page', event => {
