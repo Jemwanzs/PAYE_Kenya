@@ -134,10 +134,6 @@ function rawMoney(value) {
   return Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function percentValue(input) {
-  return toNumber(input.value) / 100;
-}
-
 function progressiveTax(taxablePay) {
   const bands = [
     { limit: 24000, rate: 0.10 },
@@ -166,24 +162,27 @@ function row(label, value, highlight = false) {
   return `<div class="result-row ${highlight ? 'highlight' : ''} ${zero ? 'zero-row' : ''}"><span>${label}</span><strong>${money(value)}</strong></div>`;
 }
 
-function statBase(statKey, componentValues, basicPay) {
-  return earningComponents.reduce((total, item) => {
-    const toggle = el[`${item.id}Affects${statKey}`];
-    return total + (toggle?.checked ? componentValues[item.id] : 0);
-  }, basicPay);
-}
-
-function calculate() {
-  const classification = el.employeeClassification.value;
+// Pure, DOM-independent tax engine — the single source of truth for every
+// classification's rules. Shared (via window.PayrollShared) with the
+// employee/payroll pages so a payroll run computes payslips with exactly
+// the same math as the standalone calculator, never a re-implementation.
+//
+// input: {
+//   classification: 'primary'|'secondary'|'contractor'|'pwd',
+//   basicPay: number,
+//   values: { <earningComponent id>: number, employeePensionRate, employerPensionRate,
+//             lifeInsurance, educationInsurance, otherDeductions },
+//   toggles: { <earningComponent id>: { nssf: bool, shif: bool, ahl: bool } },
+//   settings: { nssfRate, nssfUpperLimit, shifRate, shifMinimum, ahlEmployeeRate,
+//               ahlEmployerRate, personalRelief, nitaLevy, insuranceReliefCap,
+//               telephoneThreshold, mealsThreshold, allowableDeductionCap,
+//               perDiemThreshold, daysInMonth, secondaryFlatRate, contractorWhtRate,
+//               pwdExemption }
+// }
+function computePayroll({ classification, basicPay, values, toggles, settings }) {
   const isSecondary = classification === 'secondary';
   const isContractor = classification === 'contractor';
   const isPwd = classification === 'pwd';
-
-  document.getElementById('classificationHint').textContent = classificationHints[classification] || classificationHints.primary;
-  applyClassificationFieldState(classification);
-
-  const basicPay = toNumber(el.basicPay.value);
-  const values = Object.fromEntries(earningComponents.map(item => [item.id, toNumber(el[item.id].value)]));
 
   const directAllowances = values.regularAllowances + values.oneOffAllowances + values.bonusPay;
   const cashAllowances = values.transportAllowance + values.houseAllowance + values.overtimePay + values.otherCashAllowance;
@@ -198,11 +197,10 @@ function calculate() {
   // still applies to its (reduced) share exactly like a Primary employee.
   // Actual gross/cash-flow figures above are untouched — only the base that
   // NSSF/SHIF/AHL/pension/taxable pay are built from shrinks.
-  const pwdExemption = toNumber(el.pwdExemption.value);
   const regularEarningsPool = earningComponents.reduce((total, item) => {
     return total + (irregularComponentIds.includes(item.id) ? 0 : values[item.id]);
   }, basicPay);
-  const pwdReductionApplied = isPwd ? Math.min(pwdExemption, regularEarningsPool) : 0;
+  const pwdReductionApplied = isPwd ? Math.min(settings.pwdExemption, regularEarningsPool) : 0;
   const pwdReductionRatio = pwdReductionApplied > 0 ? pwdReductionApplied / regularEarningsPool : 0;
 
   function taxBasis(id, rawValue) {
@@ -212,25 +210,31 @@ function calculate() {
   const taxBasicPay = taxBasis('basicPay', basicPay);
   const taxValues = Object.fromEntries(earningComponents.map(item => [item.id, taxBasis(item.id, values[item.id])]));
 
-  const nssfBase = isContractor ? 0 : statBase('Nssf', taxValues, taxBasicPay);
-  const shifBase = isContractor ? 0 : statBase('Shif', taxValues, taxBasicPay);
-  const ahlBase = isContractor ? 0 : statBase('Ahl', taxValues, taxBasicPay);
+  function statBaseFor(statKey) {
+    return earningComponents.reduce((total, item) => {
+      return total + (toggles[item.id]?.[statKey] ? taxValues[item.id] : 0);
+    }, taxBasicPay);
+  }
 
-  const nssfEmployee = (isSecondary || isContractor) ? 0 : Math.min(nssfBase, toNumber(el.nssfUpperLimit.value)) * percentValue(el.nssfRate);
+  const nssfBase = isContractor ? 0 : statBaseFor('nssf');
+  const shifBase = isContractor ? 0 : statBaseFor('shif');
+  const ahlBase = isContractor ? 0 : statBaseFor('ahl');
+
+  const nssfEmployee = (isSecondary || isContractor) ? 0 : Math.min(nssfBase, settings.nssfUpperLimit) * (settings.nssfRate / 100);
   const nssfEmployer = nssfEmployee;
-  const shif = isContractor ? 0 : (shifBase > 0 ? Math.max(shifBase * percentValue(el.shifRate), toNumber(el.shifMinimum.value)) : 0);
-  const ahlEmployee = isContractor ? 0 : ahlBase * percentValue(el.ahlEmployeeRate);
-  const ahlEmployer = isContractor ? 0 : ahlBase * percentValue(el.ahlEmployerRate);
+  const shif = isContractor ? 0 : (shifBase > 0 ? Math.max(shifBase * (settings.shifRate / 100), settings.shifMinimum) : 0);
+  const ahlEmployee = isContractor ? 0 : ahlBase * (settings.ahlEmployeeRate / 100);
+  const ahlEmployer = isContractor ? 0 : ahlBase * (settings.ahlEmployerRate / 100);
 
-  const employeePension = isContractor ? 0 : taxBasicPay * percentValue(el.employeePensionRate);
-  const employerPension = isContractor ? 0 : taxBasicPay * percentValue(el.employerPensionRate);
-  const allowableDeductionCap = toNumber(el.allowableDeductionCap.value);
+  const employeePension = isContractor ? 0 : taxBasicPay * ((values.employeePensionRate || 0) / 100);
+  const employerPension = isContractor ? 0 : taxBasicPay * ((values.employerPensionRate || 0) / 100);
+  const allowableDeductionCap = settings.allowableDeductionCap;
   const nssfPensionAllowable = (isSecondary || isContractor) ? 0 : Math.min(nssfEmployee + employeePension, allowableDeductionCap);
   const totalTaxAllowableDeductions = isContractor ? 0 : (nssfPensionAllowable + shif + ahlEmployee);
 
-  const taxableTelephone = taxValues.telephoneBenefit <= toNumber(el.telephoneThreshold.value) ? 0 : taxValues.telephoneBenefit;
-  const taxableMeals = taxValues.mealsBenefit <= toNumber(el.mealsThreshold.value) ? 0 : taxValues.mealsBenefit;
-  const perDiemExemptCap = toNumber(el.perDiemThreshold.value) * toNumber(el.daysInMonth.value);
+  const taxableTelephone = taxValues.telephoneBenefit <= settings.telephoneThreshold ? 0 : taxValues.telephoneBenefit;
+  const taxableMeals = taxValues.mealsBenefit <= settings.mealsThreshold ? 0 : taxValues.mealsBenefit;
+  const perDiemExemptCap = settings.perDiemThreshold * settings.daysInMonth;
   const taxablePerDiem = taxValues.perDiem <= perDiemExemptCap ? 0 : taxValues.perDiem;
   const taxableBenefits = taxValues.cashBenefits + taxValues.carBenefit + taxableTelephone + taxableMeals + taxablePerDiem + taxValues.otherNonCashBenefit;
   const taxDirectAllowances = taxValues.regularAllowances + taxValues.oneOffAllowances + taxValues.bonusPay;
@@ -238,7 +242,7 @@ function calculate() {
   const taxableCashEarnings = taxBasicPay + taxDirectAllowances + taxCashAllowances;
   const excessEmployerPension = Math.max((employerPension + nssfEmployer) - allowableDeductionCap, 0);
 
-  const insurancePremiums = toNumber(el.lifeInsurance.value) + toNumber(el.educationInsurance.value);
+  const insurancePremiums = (values.lifeInsurance || 0) + (values.educationInsurance || 0);
 
   let taxablePay;
   let incomeTax;
@@ -248,13 +252,13 @@ function calculate() {
 
   if (isContractor) {
     taxablePay = displayGross;
-    incomeTax = displayGross * percentValue(el.contractorWhtRate);
+    incomeTax = displayGross * (settings.contractorWhtRate / 100);
     paye = incomeTax;
   } else {
     taxablePay = Math.max(taxableCashEarnings + taxableBenefits + excessEmployerPension - totalTaxAllowableDeductions, 0);
 
     if (isSecondary) {
-      incomeTax = taxablePay * percentValue(el.secondaryFlatRate);
+      incomeTax = taxablePay * (settings.secondaryFlatRate / 100);
       paye = incomeTax;
     } else {
       // For PWD, the exempt amount is already baked into taxablePay above
@@ -262,19 +266,82 @@ function calculate() {
       // isn't subtracted again here — from this point on a PWD employee
       // follows exactly the same route as a Primary employee.
       incomeTax = progressiveTax(taxablePay);
-      insuranceRelief = Math.min(insurancePremiums * 0.15, toNumber(el.insuranceReliefCap.value));
-      appliedPersonalRelief = toNumber(el.personalRelief.value);
+      insuranceRelief = Math.min(insurancePremiums * 0.15, settings.insuranceReliefCap);
+      appliedPersonalRelief = settings.personalRelief;
       paye = Math.max(incomeTax - appliedPersonalRelief - insuranceRelief, 0);
     }
   }
 
   const wht = isContractor ? paye : 0;
-  const nitaLevy = isContractor ? 0 : toNumber(el.nitaLevy.value);
+  const nitaLevy = isContractor ? 0 : settings.nitaLevy;
 
-  const otherDeductions = toNumber(el.otherDeductions.value);
+  const otherDeductions = values.otherDeductions || 0;
   const employeeDeductions = paye + nssfEmployee + shif + ahlEmployee + employeePension + insurancePremiums + otherDeductions;
   const netPay = Math.max(cashGross - employeeDeductions, 0);
   const effectiveTaxRate = taxablePay > 0 ? (paye / taxablePay) * 100 : 0;
+
+  return {
+    isSecondary, isContractor, isPwd,
+    directAllowances, cashAllowances, nonCashBenefits, cashGross, displayGross,
+    pwdReductionApplied, nssfBase, shifBase, ahlBase,
+    nssfEmployee, nssfEmployer, shif, ahlEmployee, ahlEmployer,
+    employeePension, employerPension, nssfPensionAllowable, totalTaxAllowableDeductions, taxableBenefits,
+    taxablePay, incomeTax, insuranceRelief, appliedPersonalRelief, paye, wht, nitaLevy, otherDeductions,
+    insurancePremiums, employeeDeductions, netPay, effectiveTaxRate
+  };
+}
+
+window.PayrollShared.computePayroll = computePayroll;
+window.PayrollShared.progressiveTax = progressiveTax;
+
+function calculate() {
+  const classification = el.employeeClassification.value;
+
+  document.getElementById('classificationHint').textContent = classificationHints[classification] || classificationHints.primary;
+  applyClassificationFieldState(classification);
+
+  const basicPay = toNumber(el.basicPay.value);
+  const values = Object.fromEntries(earningComponents.map(item => [item.id, toNumber(el[item.id].value)]));
+  values.employeePensionRate = toNumber(el.employeePensionRate.value);
+  values.employerPensionRate = toNumber(el.employerPensionRate.value);
+  values.lifeInsurance = toNumber(el.lifeInsurance.value);
+  values.educationInsurance = toNumber(el.educationInsurance.value);
+  values.otherDeductions = toNumber(el.otherDeductions.value);
+
+  const toggles = Object.fromEntries(earningComponents.map(item => [item.id, {
+    nssf: !!el[`${item.id}AffectsNssf`]?.checked,
+    shif: !!el[`${item.id}AffectsShif`]?.checked,
+    ahl: !!el[`${item.id}AffectsAhl`]?.checked
+  }]));
+
+  const settings = {
+    nssfRate: toNumber(el.nssfRate.value),
+    nssfUpperLimit: toNumber(el.nssfUpperLimit.value),
+    shifRate: toNumber(el.shifRate.value),
+    shifMinimum: toNumber(el.shifMinimum.value),
+    ahlEmployeeRate: toNumber(el.ahlEmployeeRate.value),
+    ahlEmployerRate: toNumber(el.ahlEmployerRate.value),
+    personalRelief: toNumber(el.personalRelief.value),
+    nitaLevy: toNumber(el.nitaLevy.value),
+    insuranceReliefCap: toNumber(el.insuranceReliefCap.value),
+    telephoneThreshold: toNumber(el.telephoneThreshold.value),
+    mealsThreshold: toNumber(el.mealsThreshold.value),
+    allowableDeductionCap: toNumber(el.allowableDeductionCap.value),
+    perDiemThreshold: toNumber(el.perDiemThreshold.value),
+    daysInMonth: toNumber(el.daysInMonth.value),
+    secondaryFlatRate: toNumber(el.secondaryFlatRate.value),
+    contractorWhtRate: toNumber(el.contractorWhtRate.value),
+    pwdExemption: toNumber(el.pwdExemption.value)
+  };
+
+  const r = computePayroll({ classification, basicPay, values, toggles, settings });
+  const {
+    isContractor, directAllowances, cashAllowances, displayGross, pwdReductionApplied,
+    nssfBase, shifBase, ahlBase, nssfEmployee, nssfEmployer, shif, ahlEmployee, ahlEmployer,
+    employeePension, employerPension, nssfPensionAllowable, totalTaxAllowableDeductions, taxableBenefits,
+    taxablePay, incomeTax, insuranceRelief, appliedPersonalRelief, paye, wht, nitaLevy, otherDeductions,
+    insurancePremiums, employeeDeductions, netPay, effectiveTaxRate
+  } = r;
 
   document.getElementById('netPay').textContent = money(netPay);
   document.getElementById('grossPay').textContent = money(displayGross);
