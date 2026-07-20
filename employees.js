@@ -33,10 +33,50 @@ const terminateDate = document.getElementById('terminateDate');
 const terminateReason = document.getElementById('terminateReason');
 const terminateError = document.getElementById('terminateError');
 
+const employeeTypeDropdown = document.getElementById('employeeTypeDropdown');
+const employeeTypeTrigger = document.getElementById('employeeTypeTrigger');
+const employeeTypeTriggerIcon = document.getElementById('employeeTypeTriggerIcon');
+const employeeTypeTriggerText = document.getElementById('employeeTypeTriggerText');
+const employeeTypePanel = document.getElementById('employeeTypePanel');
+const employeeTypeOptions = [...employeeTypePanel.querySelectorAll('.classification-option')];
+const employeeTypeSelect = document.getElementById('employeeType');
+
+const settingsError = document.getElementById('settingsError');
+const settingsInfo = document.getElementById('settingsInfo');
+const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+const settingsPage = document.getElementById('settingsPage');
+
+const LOOKUP_LIST_ELS = { job_positions: 'jobPositionsList', departments: 'departmentsList', sub_departments: 'subDepartmentsList' };
+const LOOKUP_INPUT_ELS = { job_positions: 'jobPositionInput', departments: 'departmentInput', sub_departments: 'subDepartmentInput' };
+
 let currentStatusFilter = 'active';
 let currentEmployeeId = null;
 let currentEmployeeStatus = 'active';
 let employeesLoaded = false;
+let cachedSettings = null;
+let settingsLoadPromise = null;
+
+function defaultSettings() {
+  return {
+    nssf_rate: 6, nssf_upper_limit: 108000, shif_rate: 2.75, shif_minimum: 300,
+    ahl_employee_rate: 1.5, ahl_employer_rate: 1.5, personal_relief: 2400, nita_levy: 50,
+    insurance_relief_cap: 5000, telephone_threshold: 5000, meals_threshold: 5000,
+    allowable_deduction_cap: 30000, per_diem_threshold: 10000, days_in_month: 30,
+    secondary_flat_rate: 35, contractor_wht_rate: 5, pwd_exemption: 150000,
+    job_positions: [], departments: [], sub_departments: []
+  };
+}
+
+async function loadSettings({ force = false } = {}) {
+  if (cachedSettings && !force) return cachedSettings;
+  if (!settingsLoadPromise || force) {
+    settingsLoadPromise = supabase.from('payroll_settings').select('*').maybeSingle().then(({ data }) => {
+      cachedSettings = data || defaultSettings();
+      return cachedSettings;
+    });
+  }
+  return settingsLoadPromise;
+}
 
 function compFieldId(itemId, suffix = '') {
   return `emp_${itemId}${suffix}`;
@@ -68,6 +108,56 @@ function attachMoneyBlurFormatting(scope) {
   });
 }
 
+function fillLookupSelect(selectId, items, ensureValue) {
+  const select = document.getElementById(selectId);
+  const options = [...items];
+  // Never silently drop an employee's existing value if it was since
+  // removed from the canonical list in Settings — editing them would
+  // otherwise overwrite it with blank on save.
+  if (ensureValue && !options.includes(ensureValue)) options.push(ensureValue);
+  select.innerHTML = '<option value="">— Select —</option>' +
+    options.map(item => `<option value="${item}">${item}</option>`).join('');
+  if (ensureValue) select.value = ensureValue;
+}
+
+async function populateJobSelects(employee) {
+  const settings = await loadSettings();
+  fillLookupSelect('employeeJobPosition', settings.job_positions || [], employee?.job_position);
+  fillLookupSelect('employeeDepartment', settings.departments || [], employee?.department);
+  fillLookupSelect('employeeSubDepartment', settings.sub_departments || [], employee?.sub_department);
+}
+
+function closeEmployeeTypePanel() {
+  employeeTypePanel.hidden = true;
+  employeeTypeTrigger.setAttribute('aria-expanded', 'false');
+}
+
+function syncEmployeeTypeTrigger() {
+  const value = employeeTypeSelect.value;
+  const option = employeeTypeOptions.find(o => o.dataset.value === value) || employeeTypeOptions[0];
+  employeeTypeTriggerIcon.textContent = option.dataset.icon;
+  employeeTypeTriggerText.textContent = option.dataset.label;
+  employeeTypeOptions.forEach(o => o.classList.toggle('is-selected', o === option));
+}
+
+employeeTypeTrigger.addEventListener('click', () => {
+  const opening = employeeTypePanel.hidden;
+  employeeTypePanel.hidden = !opening;
+  employeeTypeTrigger.setAttribute('aria-expanded', String(opening));
+});
+
+employeeTypeOptions.forEach(option => {
+  option.addEventListener('click', () => {
+    employeeTypeSelect.value = option.dataset.value;
+    syncEmployeeTypeTrigger();
+    closeEmployeeTypePanel();
+  });
+});
+
+document.addEventListener('click', event => {
+  if (!employeeTypeDropdown.contains(event.target)) closeEmployeeTypePanel();
+});
+
 function showDirectory() {
   directoryView.hidden = false;
   formView.hidden = true;
@@ -94,6 +184,7 @@ function resetForm() {
       if (checkbox) checkbox.checked = affectsByDefault;
     });
   });
+  syncEmployeeTypeTrigger();
 }
 
 function populateForm(employee) {
@@ -107,10 +198,12 @@ function populateForm(employee) {
   document.getElementById('employeeLastName').value = employee.last_name || '';
   document.getElementById('employeeEmail').value = employee.email || '';
   document.getElementById('employeePhone').value = employee.phone || '';
-  document.getElementById('employeeJobPosition').value = employee.job_position || '';
-  document.getElementById('employeeDepartment').value = employee.department || '';
-  document.getElementById('employeeSubDepartment').value = employee.sub_department || '';
+  // Job position/department/sub-department are populated separately via
+  // populateJobSelects(employee), which must run before this so the
+  // relevant <option> exists (including a fallback if it was since
+  // removed from Settings) before we try to select it.
   document.getElementById('employeeType').value = employee.employee_type || 'primary';
+  syncEmployeeTypeTrigger();
   document.getElementById('employeeContractStart').value = employee.contract_start_date || '';
 
   const comp = employee.compensation || {};
@@ -202,9 +295,10 @@ function renderEmployeeTable(employees) {
   `).join('');
 }
 
-addEmployeeBtn.addEventListener('click', () => {
+addEmployeeBtn.addEventListener('click', async () => {
   resetForm();
   renderCompensationFields();
+  await populateJobSelects();
   showForm();
 });
 
@@ -225,6 +319,7 @@ employeeTableBody.addEventListener('click', async event => {
   if (error || !data) return;
   resetForm();
   renderCompensationFields();
+  await populateJobSelects(data);
   populateForm(data);
   showForm();
 });
@@ -309,7 +404,137 @@ employeeRehireBtn.addEventListener('click', async () => {
   if (!error) showDirectory();
 });
 
+function renderLookupList(key, items) {
+  const container = document.getElementById(LOOKUP_LIST_ELS[key]);
+  if (!items.length) {
+    container.innerHTML = '<p class="lookup-empty">None added yet.</p>';
+    return;
+  }
+  container.innerHTML = items.map((item, idx) => `
+    <span class="lookup-item">${item}<button type="button" data-remove="${key}" data-index="${idx}" aria-label="Remove ${item}">&times;</button></span>
+  `).join('');
+}
+
+function populateSettingsForm(s) {
+  document.getElementById('settingsNssfRate').value = s.nssf_rate;
+  document.getElementById('settingsNssfUpperLimit').value = rawMoney(s.nssf_upper_limit);
+  document.getElementById('settingsShifRate').value = s.shif_rate;
+  document.getElementById('settingsShifMinimum').value = rawMoney(s.shif_minimum);
+  document.getElementById('settingsAhlEmployeeRate').value = s.ahl_employee_rate;
+  document.getElementById('settingsAhlEmployerRate').value = s.ahl_employer_rate;
+  document.getElementById('settingsPersonalRelief').value = rawMoney(s.personal_relief);
+  document.getElementById('settingsNitaLevy').value = rawMoney(s.nita_levy);
+  document.getElementById('settingsTelephoneThreshold').value = rawMoney(s.telephone_threshold);
+  document.getElementById('settingsMealsThreshold').value = rawMoney(s.meals_threshold);
+  document.getElementById('settingsAllowableDeductionCap').value = rawMoney(s.allowable_deduction_cap);
+  document.getElementById('settingsPerDiemThreshold').value = rawMoney(s.per_diem_threshold);
+  document.getElementById('settingsDaysInMonth').value = s.days_in_month;
+  document.getElementById('settingsInsuranceReliefCap').value = rawMoney(s.insurance_relief_cap);
+  document.getElementById('settingsSecondaryFlatRate').value = s.secondary_flat_rate;
+  document.getElementById('settingsContractorWhtRate').value = s.contractor_wht_rate;
+  document.getElementById('settingsPwdExemption').value = rawMoney(s.pwd_exemption);
+  renderLookupList('job_positions', s.job_positions || []);
+  renderLookupList('departments', s.departments || []);
+  renderLookupList('sub_departments', s.sub_departments || []);
+}
+
+function setSettingsPageBusy(busy) {
+  settingsPage.querySelectorAll('input, textarea, select, button').forEach(el => { el.disabled = busy; });
+}
+
+async function showSettingsPage() {
+  setSettingsPageBusy(true);
+  try {
+    const settings = await loadSettings({ force: true });
+    populateSettingsForm(settings);
+  } finally {
+    setSettingsPageBusy(false);
+  }
+}
+
+Object.entries(LOOKUP_INPUT_ELS).forEach(([key, inputId]) => {
+  const addBtn = document.querySelector(`[data-lookup-add="${key}"]`);
+  const input = document.getElementById(inputId);
+  const addItem = () => {
+    const value = input.value.trim();
+    if (!value) return;
+    if (!cachedSettings) cachedSettings = defaultSettings();
+    if (!cachedSettings[key]) cachedSettings[key] = [];
+    if (cachedSettings[key].includes(value)) { input.value = ''; return; }
+    cachedSettings[key].push(value);
+    renderLookupList(key, cachedSettings[key]);
+    input.value = '';
+    input.focus();
+  };
+  addBtn.addEventListener('click', addItem);
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); addItem(); }
+  });
+});
+
+settingsPage.addEventListener('click', event => {
+  const removeBtn = event.target.closest('[data-remove]');
+  if (!removeBtn) return;
+  const key = removeBtn.dataset.remove;
+  const idx = Number(removeBtn.dataset.index);
+  cachedSettings[key].splice(idx, 1);
+  renderLookupList(key, cachedSettings[key]);
+});
+
+saveSettingsBtn.addEventListener('click', async () => {
+  settingsError.hidden = true;
+  settingsInfo.hidden = true;
+
+  const payload = {
+    nssf_rate: toNumber(document.getElementById('settingsNssfRate').value),
+    nssf_upper_limit: toNumber(document.getElementById('settingsNssfUpperLimit').value),
+    shif_rate: toNumber(document.getElementById('settingsShifRate').value),
+    shif_minimum: toNumber(document.getElementById('settingsShifMinimum').value),
+    ahl_employee_rate: toNumber(document.getElementById('settingsAhlEmployeeRate').value),
+    ahl_employer_rate: toNumber(document.getElementById('settingsAhlEmployerRate').value),
+    personal_relief: toNumber(document.getElementById('settingsPersonalRelief').value),
+    nita_levy: toNumber(document.getElementById('settingsNitaLevy').value),
+    insurance_relief_cap: toNumber(document.getElementById('settingsInsuranceReliefCap').value),
+    telephone_threshold: toNumber(document.getElementById('settingsTelephoneThreshold').value),
+    meals_threshold: toNumber(document.getElementById('settingsMealsThreshold').value),
+    allowable_deduction_cap: toNumber(document.getElementById('settingsAllowableDeductionCap').value),
+    per_diem_threshold: toNumber(document.getElementById('settingsPerDiemThreshold').value),
+    days_in_month: toNumber(document.getElementById('settingsDaysInMonth').value),
+    secondary_flat_rate: toNumber(document.getElementById('settingsSecondaryFlatRate').value),
+    contractor_wht_rate: toNumber(document.getElementById('settingsContractorWhtRate').value),
+    pwd_exemption: toNumber(document.getElementById('settingsPwdExemption').value),
+    job_positions: cachedSettings?.job_positions || [],
+    departments: cachedSettings?.departments || [],
+    sub_departments: cachedSettings?.sub_departments || [],
+    updated_at: new Date().toISOString()
+  };
+
+  saveSettingsBtn.disabled = true;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from('payroll_settings')
+      .upsert({ ...payload, user_id: user.id }, { onConflict: 'user_id' })
+      .select()
+      .single();
+    if (error) throw error;
+
+    cachedSettings = data;
+    settingsInfo.textContent = 'Settings saved.';
+    settingsInfo.hidden = false;
+  } catch (err) {
+    settingsError.textContent = err.message || 'Could not save settings.';
+    settingsError.hidden = false;
+  } finally {
+    saveSettingsBtn.disabled = false;
+  }
+});
+
 document.addEventListener('app:page', event => {
-  if (event.detail.page === 'employees' && !employeesLoaded) loadEmployees();
-  if (event.detail.page === 'employees') showDirectory();
+  const page = event.detail.page;
+  if (page === 'employees') {
+    if (!employeesLoaded) loadEmployees();
+    showDirectory();
+  }
+  if (page === 'settings') showSettingsPage();
 });

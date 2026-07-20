@@ -62,6 +62,9 @@ create table public.payroll_settings (
   secondary_flat_rate      numeric not null default 35,
   contractor_wht_rate      numeric not null default 5,
   pwd_exemption            numeric not null default 150000,
+  job_positions            jsonb not null default '[]'::jsonb,
+  departments              jsonb not null default '[]'::jsonb,
+  sub_departments          jsonb not null default '[]'::jsonb,
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now()
 );

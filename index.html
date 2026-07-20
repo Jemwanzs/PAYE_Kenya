@@ -127,6 +127,14 @@
         <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Employees
       </button>
+      <button type="button" class="app-nav-btn" data-page="payroll" aria-selected="false">
+        <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20M7 15h4"/></svg>
+        Payroll
+      </button>
+      <button type="button" class="app-nav-btn" data-page="settings" aria-selected="false">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
     </nav>
 
     <section class="layout-grid" id="calculatorGate" hidden>
@@ -424,21 +432,51 @@
         <details open class="input-group">
           <summary><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>Job details</span></summary>
           <div class="field-grid two-col">
-            <label>First name <input type="text" id="employeeFirstName" required /></label>
-            <label>Last name <input type="text" id="employeeLastName" required /></label>
+            <label><span>First name <span class="required-asterisk">*</span></span><input type="text" id="employeeFirstName" required /></label>
+            <label><span>Last name <span class="required-asterisk">*</span></span><input type="text" id="employeeLastName" required /></label>
             <label>Email <input type="email" id="employeeEmail" /></label>
             <label>Phone <input type="text" id="employeePhone" /></label>
-            <label>Job position <input type="text" id="employeeJobPosition" /></label>
-            <label>Department <input type="text" id="employeeDepartment" /></label>
-            <label>Sub department <input type="text" id="employeeSubDepartment" /></label>
-            <label>Employee type
-              <select id="employeeType">
+            <label>Job position
+              <select id="employeeJobPosition"><option value="">— Select —</option></select>
+            </label>
+            <label>Department
+              <select id="employeeDepartment"><option value="">— Select —</option></select>
+            </label>
+            <label>Sub department
+              <select id="employeeSubDepartment"><option value="">— Select —</option></select>
+            </label>
+            <div class="classification-dropdown" id="employeeTypeDropdown">
+              <span class="field-label">Employee type</span>
+              <button type="button" class="classification-trigger" id="employeeTypeTrigger" aria-expanded="false" aria-controls="employeeTypePanel">
+                <span class="option-icon" id="employeeTypeTriggerIcon">👤</span>
+                <span class="classification-trigger-text" id="employeeTypeTriggerText">Primary Employee</span>
+                <svg class="classification-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="classification-panel" id="employeeTypePanel" hidden>
+                <button type="button" class="classification-option is-selected" data-value="primary" data-icon="👤" data-label="Primary Employee">
+                  <span class="option-icon">👤</span>
+                  <span class="option-text"><strong>Primary Employee</strong><small>Standard PAYE bands, all statutory deductions and reliefs apply.</small></span>
+                </button>
+                <button type="button" class="classification-option" data-value="secondary" data-icon="🧾" data-label="Secondary Employee">
+                  <span class="option-icon">🧾</span>
+                  <span class="option-text"><strong>Secondary Employee</strong><small>Flat-rate PAYE, NSSF nil, no personal or insurance relief.</small></span>
+                </button>
+                <button type="button" class="classification-option" data-value="contractor" data-icon="🧑‍💼" data-label="Contractor">
+                  <span class="option-icon">🧑‍💼</span>
+                  <span class="option-text"><strong>Contractor</strong><small>Flat withholding tax only — no other statutory deductions.</small></span>
+                </button>
+                <button type="button" class="classification-option" data-value="pwd" data-icon="♿" data-label="Person With Disability">
+                  <span class="option-icon">♿</span>
+                  <span class="option-text"><strong>Person With Disability</strong><small>Taxed as Primary, with a tax-exempt threshold applied first.</small></span>
+                </button>
+              </div>
+              <select id="employeeType" class="visually-hidden" tabindex="-1" aria-hidden="true">
                 <option value="primary">Primary Employee</option>
                 <option value="secondary">Secondary Employee</option>
                 <option value="contractor">Contractor</option>
                 <option value="pwd">Person With Disability</option>
               </select>
-            </label>
+            </div>
             <label>Contract start date <input type="date" id="employeeContractStart" /></label>
           </div>
         </details>
@@ -485,6 +523,91 @@
               <button type="button" class="ghost-button" id="terminateCancelBtn">Cancel</button>
             </div>
           </form>
+        </div>
+      </div>
+    </section>
+
+    <section class="employees-page" id="payrollPage" hidden>
+      <div class="employees-directory">
+        <div class="panel-header">
+          <h2>Payroll</h2>
+        </div>
+        <p class="hint">Coming soon.</p>
+      </div>
+    </section>
+
+    <section class="settings-page" id="settingsPage" hidden>
+      <div class="employees-form">
+        <div class="panel-header">
+          <h2>Settings</h2>
+        </div>
+        <p class="auth-error" id="settingsError" hidden></p>
+        <p class="auth-info" id="settingsInfo" hidden></p>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>Job positions</span></summary>
+          <div class="lookup-list" id="jobPositionsList"></div>
+          <div class="lookup-add-row">
+            <input type="text" id="jobPositionInput" placeholder="e.g. Software Engineer" />
+            <button type="button" class="ghost-button" data-lookup-add="job_positions">Add</button>
+          </div>
+        </details>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 7l9-4 9 4"/></svg><span>Departments</span></summary>
+          <div class="lookup-list" id="departmentsList"></div>
+          <div class="lookup-add-row">
+            <input type="text" id="departmentInput" placeholder="e.g. Engineering" />
+            <button type="button" class="ghost-button" data-lookup-add="departments">Add</button>
+          </div>
+        </details>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><rect x="5" y="9" width="14" height="11" rx="2"/><path d="M8 9V6a4 4 0 0 1 8 0v3"/></svg><span>Sub departments</span></summary>
+          <div class="lookup-list" id="subDepartmentsList"></div>
+          <div class="lookup-add-row">
+            <input type="text" id="subDepartmentInput" placeholder="e.g. Backend" />
+            <button type="button" class="ghost-button" data-lookup-add="sub_departments">Add</button>
+          </div>
+        </details>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M9 12h11M4 18h13M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="7" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span>Statutory configuration</span></summary>
+          <div class="field-grid two-col">
+            <label>NSSF rate % <input id="settingsNssfRate" type="number" step="0.01" /></label>
+            <label>NSSF upper limit <input data-money id="settingsNssfUpperLimit" type="text" /></label>
+            <label>SHIF rate % <input id="settingsShifRate" type="number" step="0.01" /></label>
+            <label>SHIF minimum <input data-money id="settingsShifMinimum" type="text" /></label>
+            <label>AHL employee % <input id="settingsAhlEmployeeRate" type="number" step="0.01" /></label>
+            <label>AHL employer % <input id="settingsAhlEmployerRate" type="number" step="0.01" /></label>
+            <label>Personal relief <input data-money id="settingsPersonalRelief" type="text" /></label>
+            <label>NITA employer levy <input data-money id="settingsNitaLevy" type="text" /></label>
+          </div>
+        </details>
+
+        <details class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 1 9-9"/><path d="M12 12l4-3"/></svg><span>Benefit thresholds &amp; caps</span></summary>
+          <div class="field-grid two-col">
+            <label>Telephone threshold <input data-money id="settingsTelephoneThreshold" type="text" /></label>
+            <label>Meals threshold <input data-money id="settingsMealsThreshold" type="text" /></label>
+            <label>Pension Allowable <input data-money id="settingsAllowableDeductionCap" type="text" /></label>
+            <label>Per Diem threshold (per day) <input data-money id="settingsPerDiemThreshold" type="text" /></label>
+            <label>Days in payroll month <input id="settingsDaysInMonth" type="number" step="1" min="1" max="31" /></label>
+            <label>Insurance relief cap <input data-money id="settingsInsuranceReliefCap" type="text" /></label>
+          </div>
+        </details>
+
+        <details class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M9 12h11M4 18h13M19 18h1"/></svg><span>Classification-specific rates</span></summary>
+          <div class="field-grid two-col">
+            <label>Secondary employment flat PAYE rate % <input id="settingsSecondaryFlatRate" type="number" step="0.01" /></label>
+            <label>Contractor WHT rate % <input id="settingsContractorWhtRate" type="number" step="0.01" /></label>
+            <label>PWD tax-exempt amount <input data-money id="settingsPwdExemption" type="text" /></label>
+          </div>
+        </details>
+
+        <div class="employee-form-actions">
+          <button type="button" class="primary-button" id="saveSettingsBtn">Save settings</button>
         </div>
       </div>
     </section>

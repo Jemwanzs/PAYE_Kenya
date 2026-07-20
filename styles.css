@@ -1202,6 +1202,56 @@ input:disabled {
   margin-top: 16px;
 }
 
+.required-asterisk { color: #b3261e; margin-left: -3px; }
+
+.settings-page { border-radius: 30px; background: rgba(255, 255, 255, .12); backdrop-filter: blur(14px); padding: 18px; }
+
+.lookup-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.lookup-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border-radius: 999px;
+  background: rgba(242, 140, 24, .1);
+  border: 1px solid rgba(242, 140, 24, .3);
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--brand-dark);
+}
+
+.lookup-item button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(179, 38, 30, .12);
+  color: #b3261e;
+  font-size: .82rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.lookup-item button:hover { background: rgba(179, 38, 30, .22); }
+
+.lookup-empty { font-size: .82rem; color: var(--muted); margin-top: 14px; }
+
+.lookup-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.lookup-add-row input { flex: 1; }
+
 @media (max-width: 620px) {
   .employees-page { padding: 12px; border-radius: 18px; }
   .employees-directory, .employees-form { padding: 12px; }
