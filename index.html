@@ -528,13 +528,130 @@
     </section>
 
     <section class="employees-page" id="payrollPage" hidden>
-      <div class="employees-directory">
+      <div class="employees-directory" id="payrollListView">
         <div class="panel-header">
           <h2>Payroll</h2>
+          <button type="button" class="primary-button" id="newPayrollRunBtn">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            New payroll run
+          </button>
         </div>
-        <p class="hint">Coming soon.</p>
+        <p class="hint" id="payrollRunsEmptyState" hidden>No payroll runs yet.</p>
+        <div class="employee-table-wrap">
+          <table class="employee-table" id="payrollRunsTable">
+            <thead>
+              <tr><th>Period</th><th>Status</th><th>Employees</th><th>Total net pay</th><th></th></tr>
+            </thead>
+            <tbody id="payrollRunsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="employees-form" id="payrollNewView" hidden>
+        <div class="panel-header">
+          <h2>New payroll run</h2>
+          <button type="button" class="ghost-button" id="payrollNewBackBtn">
+            <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Back to payroll
+          </button>
+        </div>
+        <p class="auth-error" id="payrollNewError" hidden></p>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg><span>Pay period</span></summary>
+          <div class="field-grid two-col">
+            <label>Period label <input type="text" id="payrollPeriodLabel" placeholder="e.g. March 2026" /></label>
+            <label></label>
+            <label>Period start <span class="required-asterisk">*</span><input type="date" id="payrollPeriodStart" required /></label>
+            <label>Period end <span class="required-asterisk">*</span><input type="date" id="payrollPeriodEnd" required /></label>
+          </div>
+        </details>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>Eligible employees</span></summary>
+          <p class="hint">Employees without a contract start date, or whose contract starts after this period ends, are excluded automatically.</p>
+          <div id="payrollEligibleList" class="payroll-employee-list"></div>
+        </details>
+
+        <details class="input-group">
+          <summary><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg><span>Terminated employees (final dues only)</span></summary>
+          <p class="hint">Include a terminated employee only to pay outstanding final dues for this period — check them in individually.</p>
+          <div id="payrollTerminatedList" class="payroll-employee-list"></div>
+        </details>
+
+        <details class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 1 9-9"/><path d="M12 12l4-3"/></svg><span>Excluded (missing or out-of-period contract dates)</span></summary>
+          <div id="payrollExcludedList" class="payroll-employee-list"></div>
+        </details>
+
+        <div class="employee-form-actions">
+          <button type="button" class="primary-button" id="createPayrollRunBtn">Create draft run</button>
+        </div>
+      </div>
+
+      <div class="employees-form" id="payrollDetailView" hidden>
+        <div class="panel-header">
+          <h2 id="payrollDetailTitle">Payroll run</h2>
+          <button type="button" class="ghost-button" id="payrollDetailBackBtn">
+            <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Back to payroll
+          </button>
+        </div>
+        <p class="auth-error" id="payrollDetailError" hidden></p>
+        <div class="access-banner" id="payrollDetailStatus"></div>
+
+        <div class="summary-cards" id="payrollDetailSummary"></div>
+
+        <div class="employee-table-wrap">
+          <table class="employee-table" id="payrollDetailTable">
+            <thead>
+              <tr><th>Employee</th><th>Type</th><th>Gross</th><th>PAYE / WHT</th><th>Net pay</th><th></th></tr>
+            </thead>
+            <tbody id="payrollDetailTableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="employee-form-actions">
+          <button type="button" class="primary-button" id="approveRunBtn">Approve run</button>
+          <button type="button" class="primary-button" id="processRunBtn" hidden>Mark processed</button>
+        </div>
       </div>
     </section>
+
+    <div id="payslipPrintWrap" hidden>
+      <div class="hero-card">
+        <div>
+          <p class="eyebrow"><span class="eyebrow-dot"></span>Payslip</p>
+          <h1 id="payslipPrintTitle">Employee — Period</h1>
+          <p class="hero-copy" id="payslipPrintSubtitle"></p>
+        </div>
+      </div>
+      <div class="results-panel">
+        <div class="net-card">
+          <span>Net pay</span>
+          <strong id="payslipPrintNetPay">KES 0.00</strong>
+          <small id="payslipPrintRate"></small>
+        </div>
+        <div class="summary-cards">
+          <div><span>Gross pay</span><strong id="payslipPrintGross">KES 0.00</strong></div>
+          <div><span>Taxable pay</span><strong id="payslipPrintTaxable">KES 0.00</strong></div>
+          <div><span>PAYE / WHT</span><strong id="payslipPrintPaye">KES 0.00</strong></div>
+          <div><span>Total deductions</span><strong id="payslipPrintTotalDeductions">KES 0.00</strong></div>
+        </div>
+        <div class="breakdown-card breakdown-computation">
+          <h2>Computation breakdown</h2>
+          <div class="breakdown-columns">
+            <div class="breakdown-col"><h3>Earnings</h3><div id="payslipPrintEarnings"></div></div>
+            <div class="breakdown-col"><h3>Deductions</h3><div id="payslipPrintDeductions"></div></div>
+          </div>
+          <div class="breakdown-net" id="payslipPrintNetRow"></div>
+        </div>
+        <div class="breakdown-card employer-card">
+          <h2>Employer contributions</h2>
+          <div id="payslipPrintEmployerRows"></div>
+        </div>
+      </div>
+    </div>
 
     <section class="settings-page" id="settingsPage" hidden>
       <div class="employees-form">
@@ -631,5 +748,6 @@
   <script src="script.js"></script>
   <script type="module" src="auth.js"></script>
   <script type="module" src="employees.js"></script>
+  <script type="module" src="payroll.js"></script>
 </body>
 </html>

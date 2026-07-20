@@ -1264,6 +1264,35 @@ input:disabled {
   .app-nav, .employees-page { display: none; }
 }
 
+/* Payslip printing: JS briefly removes #payslipPrintWrap's [hidden] and
+   toggles this class right before/after window.print(), so everything
+   else in .app-shell (including the calculator, if that's the current
+   page) is hidden for the duration and only the payslip prints. */
+body.printing-payslip .app-shell > *:not(#payslipPrintWrap) { display: none !important; }
+body.printing-payslip #payslipPrintWrap { display: block; }
+
+.payroll-employee-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.payroll-employee-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffaf3;
+  font-size: .86rem;
+}
+
+.payroll-employee-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--brand); flex: none; }
+.payroll-employee-row .employee-name { font-weight: 700; flex: 1; }
+.payroll-employee-row .employee-reason { font-size: .76rem; color: var(--muted); }
+.payroll-employee-row.is-excluded { opacity: .7; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.001ms !important; }
 }

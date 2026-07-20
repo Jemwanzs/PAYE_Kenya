@@ -108,3 +108,50 @@ create policy "manage_own_employees"
 
 create index employees_user_id_idx on public.employees(user_id);
 create index employees_status_idx on public.employees(status);
+
+-- Payroll runs + payslips (see migrate_payroll_runs.sql for the
+-- version-controlled description; kept in sync here for fresh installs).
+
+create table public.payroll_runs (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null references auth.users(id) on delete cascade,
+  period_label   text not null,
+  period_start   date not null,
+  period_end     date not null,
+  status         text not null default 'draft'
+                  check (status in ('draft', 'approved', 'processed')),
+  created_at     timestamptz not null default now(),
+  approved_at    timestamptz,
+  processed_at   timestamptz
+);
+
+alter table public.payroll_runs enable row level security;
+
+create policy "manage_own_payroll_runs"
+  on public.payroll_runs for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index payroll_runs_user_id_idx on public.payroll_runs(user_id);
+
+create table public.payslips (
+  id                     uuid primary key default gen_random_uuid(),
+  payroll_run_id         uuid not null references public.payroll_runs(id) on delete cascade,
+  employee_id            uuid not null references public.employees(id) on delete cascade,
+  user_id                uuid not null references auth.users(id) on delete cascade,
+  employee_snapshot      jsonb not null,
+  compensation_snapshot  jsonb not null,
+  results                jsonb not null,
+  is_final_dues          boolean not null default false,
+  created_at             timestamptz not null default now()
+);
+
+alter table public.payslips enable row level security;
+
+create policy "manage_own_payslips"
+  on public.payslips for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index payslips_run_idx on public.payslips(payroll_run_id);
+create index payslips_employee_idx on public.payslips(employee_id);
