@@ -320,7 +320,27 @@ label {
   font-weight: 700;
 }
 
-input {
+/* A bare <label><input type="checkbox"/> Text</label> would otherwise
+   inherit label's display:grid above, which puts the checkbox and its
+   text on separate grid rows instead of side by side. */
+label:has(> input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+/* input's width:100% below is meant for text-like fields; a checkbox
+   already matches the bare `input` selector, so without this it stretches
+   to fill the row and shoves its label text far to the right. */
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  accent-color: var(--brand);
+}
+
+input, select, textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -328,18 +348,38 @@ input {
   color: var(--text);
   background: #fffaf3;
   outline: none;
+  font-family: inherit;
+  font-size: .95rem;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
 
-input:focus {
+input:focus, select:focus, textarea:focus {
   border-color: rgba(242, 140, 24, .75);
   box-shadow: 0 0 0 4px rgba(242, 140, 24, .14);
 }
 
-input:disabled {
+input:disabled, select:disabled, textarea:disabled {
   background: rgba(77, 43, 21, .05);
   color: #a3897a;
   cursor: not-allowed;
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b3510' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 15px;
+  cursor: pointer;
+}
+select:disabled { cursor: not-allowed; }
+
+textarea {
+  resize: vertical;
+  min-height: 68px;
+  line-height: 1.4;
 }
 
 .field-disabled { opacity: .55; }
@@ -1386,6 +1426,17 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
 /* Leave module ---------------------------------------------------- */
 
 .leave-subview { margin-top: 16px; }
+
+/* .tab-bar defaults to a fixed 2-column grid (built for the calculator's
+   Config/Calculate tabs) and .employee-status-filter to a fixed 3-column
+   one — neither fits Leave's 5-item bars, which wrapped into an uneven
+   2/2/1 or 3/2 layout. auto-fit lets each bar fill as many equal-width
+   columns as the panel is wide enough for, at any item count or width. */
+.leave-tab-bar,
+.leave-status-filter {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  max-width: none;
+}
 
 .eligibility-section { margin-top: 14px; }
 .eligibility-section:first-of-type { margin-top: 4px; }

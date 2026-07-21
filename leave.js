@@ -1037,6 +1037,11 @@ printLeaveBalancesBtn.addEventListener('click', () => {
 
 document.addEventListener('app:page', async event => {
   if (event.detail.page !== 'leave') return;
-  await loadCoreLeaveData();
+  try {
+    await loadCoreLeaveData();
+  } catch (err) {
+    leaveApplicationsError.textContent = err.message || 'Could not load leave data.';
+    leaveApplicationsError.hidden = false;
+  }
   showLeaveTab('applications');
 });
