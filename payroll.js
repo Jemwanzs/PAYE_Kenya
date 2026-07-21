@@ -1,6 +1,6 @@
 import { supabase } from './auth.js';
 
-const { earningComponents, classificationLabels, toNumber, money, computePayroll } = window.PayrollShared;
+const { earningComponents, classificationLabels, toNumber, money, rawMoney, computePayroll } = window.PayrollShared;
 
 const listView = document.getElementById('payrollListView');
 const newView = document.getElementById('payrollNewView');
@@ -820,10 +820,13 @@ function musterHeaderRows(columns) {
   return `<tr>${row1.join('')}</tr><tr>${row2.join('')}</tr>`;
 }
 
+// Muster roll amounts are unlabelled numbers, not "KES ..." — the
+// business name/currency context is already established once in the
+// page header, and the columns are far too narrow for the prefix.
 function musterBodyRow(payslip, columns) {
   const cells = columns.map(col => {
     const raw = col.getValue(payslip);
-    const value = col.text ? raw : money(raw || 0);
+    const value = col.text ? raw : rawMoney(raw || 0);
     const classes = [col.text ? 'muster-left' : 'muster-right', col.bold ? 'muster-bold' : ''].filter(Boolean).join(' ');
     return `<td class="${classes}">${value}</td>`;
   });
@@ -834,7 +837,7 @@ function musterTotalsRow(payslips, columns) {
   const cells = columns.map((col, idx) => {
     if (col.text) return `<td class="muster-left muster-bold">${idx === 0 ? 'GRAND TOTAL' : ''}</td>`;
     const total = payslips.reduce((sum, p) => sum + (col.getValue(p) || 0), 0);
-    return `<td class="muster-right muster-bold">${money(total)}</td>`;
+    return `<td class="muster-right muster-bold">${rawMoney(total)}</td>`;
   });
   return `<tr class="muster-totals-row">${cells.join('')}</tr>`;
 }
@@ -891,9 +894,14 @@ async function printMusterRoll() {
     // @page size is a page-level rule, not scopable by a body class, so
     // it's injected just for this print and removed right after —
     // payslip/calculator prints stay on the browser's portrait default.
+    // margin: 0 also leaves Chrome/Edge no room to draw their default
+    // header/footer (page title + URL); .muster-page replicates the
+    // visual margin from inside the content instead.
     const pageStyle = document.createElement('style');
-    pageStyle.textContent = '@page { size: landscape; margin: 10mm; }';
+    pageStyle.textContent = '@page { size: landscape; margin: 0; }';
     document.head.appendChild(pageStyle);
+    const originalTitle = document.title;
+    document.title = '';
 
     wrap.hidden = false;
     document.body.classList.add('printing-muster-roll');
@@ -901,6 +909,7 @@ async function printMusterRoll() {
     document.body.classList.remove('printing-muster-roll');
     wrap.hidden = true;
     pageStyle.remove();
+    document.title = originalTitle;
   } catch (err) {
     payrollDetailError.textContent = err.message || 'Could not generate the muster roll.';
     payrollDetailError.hidden = false;

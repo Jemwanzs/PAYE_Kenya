@@ -1244,9 +1244,14 @@ printLeaveBalancesBtn.addEventListener('click', () => {
   const wrap = document.getElementById('leaveBalancePrintWrap');
   wrap.innerHTML = buildLeaveBalancesPrintHtml();
 
+  // margin: 0 (not the usual 10mm) so Chrome/Edge have no room left to
+  // draw their default header/footer (page title + URL) — .muster-page
+  // replicates the visual margin from inside the content instead.
   const pageStyle = document.createElement('style');
-  pageStyle.textContent = '@page { size: landscape; margin: 10mm; }';
+  pageStyle.textContent = '@page { size: landscape; margin: 0; }';
   document.head.appendChild(pageStyle);
+  const originalTitle = document.title;
+  document.title = '';
 
   wrap.hidden = false;
   document.body.classList.add('printing-leave-balances');
@@ -1254,6 +1259,7 @@ printLeaveBalancesBtn.addEventListener('click', () => {
   document.body.classList.remove('printing-leave-balances');
   wrap.hidden = true;
   pageStyle.remove();
+  document.title = originalTitle;
 });
 
 // ---------------------------------------------------------------------

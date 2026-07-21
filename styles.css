@@ -1395,13 +1395,15 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
   * { transition-duration: 0.001ms !important; }
 }
 
-/* Muster roll: one .muster-page per printed sheet, sized to a landscape
-   page's usable area so the footer (position: absolute; bottom: 0) sits
-   at the physical bottom of that sheet instead of right after the table. */
+/* Muster roll: one .muster-page per printed sheet. @page margin is set
+   to 0 by JS for this print (see printMusterRoll) — Chrome/Edge only
+   draw their default header/footer (page title + URL) in the page
+   margin, so a 0 margin suppresses them; this padding replicates the
+   visual margin from inside the content instead. */
 .muster-page {
   position: relative;
-  min-height: 190mm;
-  padding-bottom: 34px;
+  min-height: 180mm;
+  padding: 10mm 10mm calc(10mm + 26px);
   box-sizing: border-box;
   page-break-after: always;
   break-after: page;
@@ -1410,21 +1412,21 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
 }
 .muster-page:last-child { page-break-after: auto; break-after: auto; }
 
-.muster-header { margin-bottom: 10px; }
-.muster-business-name { font-size: 16px; font-weight: 800; }
-.muster-cycle { font-size: 12px; font-weight: 700; margin-top: 2px; }
-.muster-meta { font-size: 10px; color: #5a4d43; margin-top: 2px; }
+.muster-header { margin-bottom: 8px; }
+.muster-business-name { font-size: 12px; font-weight: 800; }
+.muster-cycle { font-size: 9px; font-weight: 700; margin-top: 1px; }
+.muster-meta { font-size: 7.5px; color: #5a4d43; margin-top: 1px; }
 
 .muster-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 8px;
+  font-size: 6.5px;
 }
 .muster-table th,
 .muster-table td {
   border: 1px solid #999;
-  padding: 3px 4px;
+  padding: 2px 3px;
   overflow-wrap: break-word;
 }
 .muster-table th { background: #eee; font-weight: 700; text-align: center; }
@@ -1435,14 +1437,14 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
 
 .muster-footer {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 10mm;
+  right: 10mm;
+  bottom: 10mm;
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
   gap: 12px;
-  font-size: 10px;
+  font-size: 7.5px;
 }
 .muster-prepared { white-space: nowrap; }
 .muster-page-number { font-weight: 700; white-space: nowrap; }
