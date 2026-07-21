@@ -680,7 +680,7 @@
 
     <section class="employees-page" id="leavePage" hidden>
       <div class="panel-header">
-        <h2>Leave</h2>
+        <h2 class="page-title-on-dark">Leave</h2>
       </div>
 
       <div class="tab-bar leave-tab-bar" role="tablist" aria-label="Leave sections">
@@ -749,9 +749,18 @@
         </div>
         <p class="auth-error" id="leaveApplyError" hidden></p>
         <div class="field-grid two-col">
-          <label><span>Employee <span class="required-asterisk">*</span></span>
-            <select id="leaveApplyEmployee" required><option value="">— Select —</option></select>
-          </label>
+          <div class="classification-dropdown lookup-dropdown searchable-dropdown" id="leaveApplyEmployeeDropdown">
+            <span class="field-label">Employee <span class="required-asterisk">*</span></span>
+            <button type="button" class="classification-trigger" id="leaveApplyEmployeeTrigger" aria-expanded="false">
+              <span class="classification-trigger-text" id="leaveApplyEmployeeTriggerText">— Select —</span>
+              <svg class="classification-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="classification-panel" id="leaveApplyEmployeePanel" hidden>
+              <input type="text" class="dropdown-search-input" id="leaveApplyEmployeeSearch" placeholder="Search by name..." autocomplete="off" />
+              <div class="classification-options-scroll" id="leaveApplyEmployeeOptions"></div>
+            </div>
+            <select id="leaveApplyEmployee" class="visually-hidden" tabindex="-1" aria-hidden="true" required><option value="">— Select —</option></select>
+          </div>
           <label><span>Leave type <span class="required-asterisk">*</span></span>
             <select id="leaveApplyType" required><option value="">— Select employee first —</option></select>
           </label>

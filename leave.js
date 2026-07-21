@@ -487,6 +487,67 @@ function renderAnalytics() {
 // Apply for leave
 // ---------------------------------------------------------------------
 
+// A searchable variant of employees.js's createLookupDropdown: same
+// trigger/panel/hidden-select structure, plus a text filter, since the
+// employee list this feeds (unlike job positions/departments) can get
+// long enough that scanning it by eye isn't practical.
+function createSearchableDropdown(fieldId) {
+  const dropdown = document.getElementById(`${fieldId}Dropdown`);
+  const trigger = document.getElementById(`${fieldId}Trigger`);
+  const triggerText = document.getElementById(`${fieldId}TriggerText`);
+  const panel = document.getElementById(`${fieldId}Panel`);
+  const searchInput = document.getElementById(`${fieldId}Search`);
+  const optionsList = document.getElementById(`${fieldId}Options`);
+  const select = document.getElementById(fieldId);
+  let items = []; // { value, label }
+
+  function close() {
+    panel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  }
+  function open() {
+    panel.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    searchInput.value = '';
+    renderOptions('');
+    searchInput.focus();
+  }
+  function renderOptions(query) {
+    const q = query.trim().toLowerCase();
+    const filtered = q ? items.filter(it => it.label.toLowerCase().includes(q)) : items;
+    optionsList.innerHTML = filtered.length
+      ? filtered.map(it => `<button type="button" class="classification-option simple${it.value === select.value ? ' is-selected' : ''}" data-value="${it.value}">${it.label}</button>`).join('')
+      : '<p class="hint">No matches.</p>';
+  }
+
+  trigger.addEventListener('click', () => { panel.hidden ? open() : close(); });
+  searchInput.addEventListener('input', () => renderOptions(searchInput.value));
+  optionsList.addEventListener('click', event => {
+    const btn = event.target.closest('[data-value]');
+    if (!btn) return;
+    select.value = btn.dataset.value;
+    const item = items.find(it => it.value === btn.dataset.value);
+    triggerText.textContent = item ? item.label : '— Select —';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    close();
+  });
+  document.addEventListener('click', event => {
+    if (!dropdown.contains(event.target)) close();
+  });
+
+  return {
+    setOptions(newItems) {
+      items = newItems;
+      select.innerHTML = '<option value="">— Select —</option>' +
+        items.map(it => `<option value="${it.value}">${it.label}</option>`).join('');
+      select.value = '';
+      triggerText.textContent = '— Select —';
+    }
+  };
+}
+
+const leaveApplyEmployeeDropdown = createSearchableDropdown('leaveApplyEmployee');
+
 applyLeaveBtn.addEventListener('click', () => {
   leaveApplyError.hidden = true;
   leaveApplyTitle.textContent = 'Apply for leave';
@@ -495,8 +556,9 @@ applyLeaveBtn.addEventListener('click', () => {
   leaveApplyDocRow.hidden = true;
   leaveApplyBalanceHint.textContent = '';
 
-  leaveApplyEmployee.innerHTML = '<option value="">— Select —</option>' +
-    employeesCache.filter(e => e.status === 'active').map(e => `<option value="${e.id}">${employeeName(e)}</option>`).join('');
+  leaveApplyEmployeeDropdown.setOptions(
+    employeesCache.filter(e => e.status === 'active').map(e => ({ value: e.id, label: employeeName(e) }))
+  );
   leaveApplyType.innerHTML = '<option value="">— Select employee first —</option>';
 
   Object.entries(leaveViews).forEach(([, el]) => { el.hidden = true; });
