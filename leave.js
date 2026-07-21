@@ -456,6 +456,11 @@ leaveDecisionForm.addEventListener('submit', async event => {
 
     await loadCoreLeaveData({ force: true });
     renderApplicationsTable();
+    // Approving/rejecting changes "days taken", which feeds directly into
+    // the balance table and print report — re-render it immediately
+    // rather than waiting for the next time that tab happens to be
+    // opened, so it's never left showing a stale balance.
+    renderBalancesTable();
     closeDecisionOverlay();
   } catch (err) {
     leaveDecisionError.textContent = err.message || 'Could not record this decision.';
