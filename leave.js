@@ -92,6 +92,7 @@ const leaveHolidaysEmptyState = document.getElementById('leaveHolidaysEmptyState
 const leaveHolidaysTableBody = document.getElementById('leaveHolidaysTableBody');
 
 const printLeaveBalancesBtn = document.getElementById('printLeaveBalancesBtn');
+const refreshLeaveBalancesBtn = document.getElementById('refreshLeaveBalancesBtn');
 const leaveBalancesDept = document.getElementById('leaveBalancesDept');
 const leaveBalancesSubDept = document.getElementById('leaveBalancesSubDept');
 const leaveBalancesAsOf = document.getElementById('leaveBalancesAsOf');
@@ -1233,6 +1234,22 @@ function renderBalancesTable() {
 
 [leaveBalancesDept, leaveBalancesSubDept, leaveBalancesAsOf].forEach(el => el.addEventListener('change', renderBalancesTable));
 leaveBalancesSearch.addEventListener('input', renderBalancesTable);
+
+// Balances are always computed live from the currently-loaded caches
+// (employees, leave types, applications, adjustments) — this button
+// exists for when the underlying data changed elsewhere (a new
+// employee added, a leave type edited, a department renamed in
+// Settings, another admin's changes) since this tab was first opened,
+// rather than because the math itself goes stale on its own.
+refreshLeaveBalancesBtn.addEventListener('click', async () => {
+  refreshLeaveBalancesBtn.disabled = true;
+  try {
+    await loadCoreLeaveData({ force: true });
+    renderBalancesTable();
+  } finally {
+    refreshLeaveBalancesBtn.disabled = false;
+  }
+});
 
 leaveBalancesTableBody.addEventListener('click', event => {
   const btn = event.target.closest('.leave-balance-cell');
