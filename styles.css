@@ -1514,6 +1514,42 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
   white-space: nowrap;
 }
 
+.leave-balance-cell {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.leave-balance-cell:hover { background: rgba(242, 140, 24, .1); border-color: rgba(242, 140, 24, .3); }
+.leave-balance-cell.has-adjustments { color: var(--brand-dark); }
+.leave-balance-cell.has-adjustments::after { content: ' \25CF'; font-size: .6em; vertical-align: super; color: var(--brand); }
+
+.leave-adjust-history {
+  margin: 14px 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.leave-adjust-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: .84rem;
+}
+.leave-adjust-history-row:last-child { border-bottom: 0; }
+.leave-adjust-history-row div { display: flex; flex-direction: column; gap: 2px; }
+.leave-adjust-history-row strong { color: var(--brand-dark); }
+.leave-adjust-history-row span { color: var(--muted); font-size: .78rem; }
+
 /* Leave balances printing: same trick as the muster roll, scoped to
    #leaveBalancePrintWrap; it reuses the .muster-* print styles above. */
 body.printing-leave-balances .app-shell > *:not(#leaveBalancePrintWrap) { display: none !important; }

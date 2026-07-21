@@ -101,6 +101,18 @@ const leaveDecisionTitle = document.getElementById('leaveDecisionTitle');
 const leaveDecisionComment = document.getElementById('leaveDecisionComment');
 const leaveDecisionError = document.getElementById('leaveDecisionError');
 
+const leaveAdjustOverlay = document.getElementById('leaveAdjustOverlay');
+const leaveAdjustCloseBtn = document.getElementById('leaveAdjustCloseBtn');
+const leaveAdjustTitle = document.getElementById('leaveAdjustTitle');
+const leaveAdjustCurrentBalance = document.getElementById('leaveAdjustCurrentBalance');
+const leaveAdjustHistory = document.getElementById('leaveAdjustHistory');
+const leaveAdjustForm = document.getElementById('leaveAdjustForm');
+const leaveAdjustDate = document.getElementById('leaveAdjustDate');
+const leaveAdjustDays = document.getElementById('leaveAdjustDays');
+const leaveAdjustReason = document.getElementById('leaveAdjustReason');
+const leaveAdjustError = document.getElementById('leaveAdjustError');
+const leaveAdjustSaveBtn = document.getElementById('leaveAdjustSaveBtn');
+
 // ---------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------
@@ -109,6 +121,7 @@ let employeesCache = [];
 let leaveTypesCache = [];
 let holidaysCache = [];
 let applicationsCache = [];
+let adjustmentsCache = [];
 let settingsCache = null;
 let leaveDataLoaded = false;
 
@@ -117,6 +130,7 @@ let currentAppStatusFilter = 'all';
 let calendarMonth = new Date().getMonth();
 let calendarYear = new Date().getFullYear();
 let pendingDecision = null; // { applicationId, action: 'approved' | 'rejected' }
+let currentAdjustmentTarget = null; // { employeeId, leaveTypeId }
 
 // ---------------------------------------------------------------------
 // Small date helpers
@@ -230,6 +244,18 @@ function usedDaysForYear(employeeId, leaveTypeId, yearStart, yearEnd, asOfStr) {
     .reduce((sum, a) => sum + toNumber(a.days_requested), 0);
 }
 
+// Manual +/- corrections (opening balances, ad-hoc HR grants) — scoped
+// to the same leave year and "as of" cutoff as usage, so an adjustment
+// only counts once its date has arrived and then carries forward like
+// any other unused balance.
+function adjustmentDaysForYear(employeeId, leaveTypeId, yearStart, yearEnd, asOfStr) {
+  const cappedEnd = asOfStr < yearEnd ? asOfStr : yearEnd;
+  return adjustmentsCache
+    .filter(a => a.employee_id === employeeId && a.leave_type_id === leaveTypeId
+      && a.adjustment_date >= yearStart && a.adjustment_date <= cappedEnd)
+    .reduce((sum, a) => sum + toNumber(a.days), 0);
+}
+
 // depth caps carry-forward recursion at 10 leave years back — plenty for
 // any realistic tenure, and entitlement/used both fall to 0 once the
 // recursion runs past when the employee or leave type actually existed.
@@ -237,13 +263,14 @@ function computeLeaveBalance(employee, leaveType, asOfStr, depth = 0) {
   const { start: yearStart, end: yearEnd, year } = leaveYearBounds(asOfStr);
   const entitlement = entitlementForYear(employee, leaveType, yearStart, yearEnd, asOfStr);
   const used = usedDaysForYear(employee.id, leaveType.id, yearStart, yearEnd, asOfStr);
+  const adjusted = adjustmentDaysForYear(employee.id, leaveType.id, yearStart, yearEnd, asOfStr);
 
   let carryIn = 0;
   if (depth < 10) {
     const prevBalance = computeLeaveBalance(employee, leaveType, `${year - 1}-12-31`, depth + 1);
     carryIn = Math.max(0, Math.min(prevBalance, toNumber(leaveType.max_carry_forward)));
   }
-  return entitlement + carryIn - used;
+  return entitlement + carryIn + adjusted - used;
 }
 
 // ---------------------------------------------------------------------
@@ -273,17 +300,19 @@ leaveTabButtons.forEach(btn => {
 
 async function loadCoreLeaveData({ force = false } = {}) {
   if (leaveDataLoaded && !force) return;
-  const [employeesRes, typesRes, holidaysRes, appsRes, settingsRes] = await Promise.all([
+  const [employeesRes, typesRes, holidaysRes, appsRes, adjustmentsRes, settingsRes] = await Promise.all([
     supabase.from('employees').select('*').order('first_name'),
     supabase.from('leave_types').select('*').order('name'),
     supabase.from('public_holidays').select('*').order('holiday_date'),
     supabase.from('leave_applications').select('*').order('start_date', { ascending: false }),
+    supabase.from('leave_balance_adjustments').select('*').order('adjustment_date', { ascending: false }),
     supabase.from('payroll_settings').select('*').maybeSingle()
   ]);
   employeesCache = employeesRes.data || [];
   leaveTypesCache = typesRes.data || [];
   holidaysCache = holidaysRes.data || [];
   applicationsCache = appsRes.data || [];
+  adjustmentsCache = adjustmentsRes.data || [];
   settingsCache = settingsRes.data || null;
   leaveDataLoaded = true;
   populateDeptSelects();
@@ -970,13 +999,26 @@ function renderBalancesTable() {
       <td>${employeeName(emp)}</td>
       <td>${emp.job_position || '—'}</td>
       <td>${emp.department || '—'}</td>
-      ${leaveTypesCache.map(t => `<td>${computeLeaveBalance(emp, t, asOf).toFixed(2)}</td>`).join('')}
+      ${leaveTypesCache.map(t => {
+        const hasAdjustments = adjustmentsCache.some(a => a.employee_id === emp.id && a.leave_type_id === t.id);
+        return `<td>
+          <button type="button" class="leave-balance-cell${hasAdjustments ? ' has-adjustments' : ''}" data-employee-id="${emp.id}" data-leave-type-id="${t.id}" title="Click to adjust this balance">
+            ${computeLeaveBalance(emp, t, asOf).toFixed(2)}
+          </button>
+        </td>`;
+      }).join('')}
     </tr>
   `).join('') || `<tr><td colspan="${3 + leaveTypesCache.length}">No employees match this filter.</td></tr>`;
 }
 
 [leaveBalancesDept, leaveBalancesSubDept, leaveBalancesAsOf].forEach(el => el.addEventListener('change', renderBalancesTable));
 leaveBalancesSearch.addEventListener('input', renderBalancesTable);
+
+leaveBalancesTableBody.addEventListener('click', event => {
+  const btn = event.target.closest('.leave-balance-cell');
+  if (!btn) return;
+  openAdjustmentModal(btn.dataset.employeeId, btn.dataset.leaveTypeId);
+});
 
 function buildLeaveBalancesPrintHtml() {
   const asOf = leaveBalancesAsOf.value || todayStr();
@@ -1029,6 +1071,104 @@ printLeaveBalancesBtn.addEventListener('click', () => {
   document.body.classList.remove('printing-leave-balances');
   wrap.hidden = true;
   pageStyle.remove();
+});
+
+// ---------------------------------------------------------------------
+// Manual balance adjustments
+// ---------------------------------------------------------------------
+
+function renderAdjustmentHistory() {
+  const { employeeId, leaveTypeId } = currentAdjustmentTarget;
+  const rows = adjustmentsCache
+    .filter(a => a.employee_id === employeeId && a.leave_type_id === leaveTypeId)
+    .sort((a, b) => (a.adjustment_date < b.adjustment_date ? 1 : -1));
+
+  leaveAdjustHistory.innerHTML = rows.length
+    ? rows.map(a => `
+        <div class="leave-adjust-history-row">
+          <div>
+            <strong>${a.days > 0 ? '+' : ''}${a.days} day${Math.abs(a.days) === 1 ? '' : 's'}</strong>
+            <span>${a.adjustment_date}${a.reason ? ` &middot; ${a.reason}` : ''}</span>
+          </div>
+          <button type="button" class="ghost-button leave-adjust-delete-btn" data-id="${a.id}">Delete</button>
+        </div>
+      `).join('')
+    : '<p class="hint">No manual adjustments yet.</p>';
+}
+
+function openAdjustmentModal(employeeId, leaveTypeId) {
+  const employee = employeesCache.find(e => e.id === employeeId);
+  const leaveType = leaveTypesCache.find(t => t.id === leaveTypeId);
+  if (!employee || !leaveType) return;
+
+  currentAdjustmentTarget = { employeeId, leaveTypeId };
+  leaveAdjustTitle.textContent = `${employeeName(employee)} — ${leaveType.name}`;
+  const asOf = leaveBalancesAsOf.value || todayStr();
+  leaveAdjustCurrentBalance.textContent = `Current balance as of ${asOf}: ${computeLeaveBalance(employee, leaveType, asOf).toFixed(2)} day(s).`;
+  leaveAdjustForm.reset();
+  leaveAdjustDate.value = todayStr();
+  leaveAdjustError.hidden = true;
+  renderAdjustmentHistory();
+  leaveAdjustOverlay.hidden = false;
+}
+
+function closeAdjustmentModal() {
+  leaveAdjustOverlay.hidden = true;
+  currentAdjustmentTarget = null;
+}
+
+leaveAdjustCloseBtn.addEventListener('click', closeAdjustmentModal);
+
+leaveAdjustForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!currentAdjustmentTarget) return;
+  leaveAdjustError.hidden = true;
+
+  const days = toNumber(leaveAdjustDays.value);
+  if (!leaveAdjustDate.value || !days) {
+    leaveAdjustError.textContent = 'Date and a non-zero day amount are both required.';
+    leaveAdjustError.hidden = false;
+    return;
+  }
+
+  leaveAdjustSaveBtn.disabled = true;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('leave_balance_adjustments').insert({
+      user_id: user.id,
+      employee_id: currentAdjustmentTarget.employeeId,
+      leave_type_id: currentAdjustmentTarget.leaveTypeId,
+      adjustment_date: leaveAdjustDate.value,
+      days,
+      reason: leaveAdjustReason.value.trim() || null
+    });
+    if (error) throw error;
+
+    await loadCoreLeaveData({ force: true });
+    renderBalancesTable();
+    openAdjustmentModal(currentAdjustmentTarget.employeeId, currentAdjustmentTarget.leaveTypeId);
+    leaveAdjustForm.reset();
+    leaveAdjustDate.value = todayStr();
+  } catch (err) {
+    leaveAdjustError.textContent = err.message || 'Could not save this adjustment.';
+    leaveAdjustError.hidden = false;
+  } finally {
+    leaveAdjustSaveBtn.disabled = false;
+  }
+});
+
+leaveAdjustHistory.addEventListener('click', async event => {
+  const btn = event.target.closest('.leave-adjust-delete-btn');
+  if (!btn || !currentAdjustmentTarget) return;
+  btn.disabled = true;
+  const { error } = await supabase.from('leave_balance_adjustments').delete().eq('id', btn.dataset.id);
+  if (!error) {
+    await loadCoreLeaveData({ force: true });
+    renderBalancesTable();
+    openAdjustmentModal(currentAdjustmentTarget.employeeId, currentAdjustmentTarget.leaveTypeId);
+  } else {
+    btn.disabled = false;
+  }
 });
 
 // ---------------------------------------------------------------------

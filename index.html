@@ -945,6 +945,29 @@
       </div>
     </div>
 
+    <div class="purchase-overlay" id="leaveAdjustOverlay" hidden>
+      <div class="purchase-modal" style="max-width:480px">
+        <button type="button" class="modal-close" id="leaveAdjustCloseBtn" aria-label="Close">&times;</button>
+        <p class="eyebrow"><span class="eyebrow-dot"></span>Balance adjustment</p>
+        <h2 id="leaveAdjustTitle">Employee — Leave type</h2>
+        <p class="hero-copy" id="leaveAdjustCurrentBalance"></p>
+
+        <div id="leaveAdjustHistory" class="leave-adjust-history"></div>
+
+        <form id="leaveAdjustForm">
+          <div class="field-grid two-col">
+            <label><span>Date <span class="required-asterisk">*</span></span><input type="date" id="leaveAdjustDate" required /></label>
+            <label><span>Days (use &minus; to deduct) <span class="required-asterisk">*</span></span><input type="number" id="leaveAdjustDays" step="0.5" required /></label>
+          </div>
+          <label>Reason <textarea id="leaveAdjustReason" rows="2" placeholder="e.g. opening balance from previous system"></textarea></label>
+          <p class="auth-error" id="leaveAdjustError" hidden></p>
+          <div class="auth-actions" style="margin-top:14px">
+            <button type="submit" class="primary-button" id="leaveAdjustSaveBtn">Add adjustment</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div id="leaveBalancePrintWrap" hidden></div>
 
     <div id="musterRollPrintWrap" hidden></div>

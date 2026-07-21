@@ -287,3 +287,28 @@ create index leave_applications_user_id_idx on public.leave_applications(user_id
 create index leave_applications_employee_idx on public.leave_applications(employee_id);
 create index leave_applications_type_idx on public.leave_applications(leave_type_id);
 create index leave_applications_status_idx on public.leave_applications(status);
+
+-- Manual leave balance adjustments (see
+-- migrate_leave_balance_adjustments.sql for the version-controlled
+-- description; kept in sync here for fresh installs).
+
+create table public.leave_balance_adjustments (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null references auth.users(id) on delete cascade,
+  employee_id     uuid not null references public.employees(id) on delete cascade,
+  leave_type_id   uuid not null references public.leave_types(id) on delete cascade,
+  adjustment_date date not null,
+  days            numeric not null,
+  reason          text,
+  created_at      timestamptz not null default now()
+);
+
+alter table public.leave_balance_adjustments enable row level security;
+
+create policy "manage_own_leave_balance_adjustments"
+  on public.leave_balance_adjustments for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index leave_balance_adjustments_employee_idx on public.leave_balance_adjustments(employee_id);
+create index leave_balance_adjustments_type_idx on public.leave_balance_adjustments(leave_type_id);
