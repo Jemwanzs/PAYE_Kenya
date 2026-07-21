@@ -401,7 +401,7 @@ function renderApplicationsTable() {
         <td>${type ? type.name : 'Deleted leave type'}</td>
         <td>${app.start_date}</td>
         <td>${app.end_date}</td>
-        <td>${app.days_requested}</td>
+        <td>${toNumber(app.days_requested).toFixed(2)}</td>
         <td><span class="status-pill status-${statusPillClass[status]}"${comment}>${statusLabel[status]}</span></td>
         <td>${actions}</td>
       </tr>
@@ -791,7 +791,7 @@ function renderLeaveTypesTable() {
   leaveTypesTableBody.innerHTML = leaveTypesCache.map(t => `
     <tr data-id="${t.id}">
       <td>${t.name}</td>
-      <td>${t.annual_days}</td>
+      <td>${toNumber(t.annual_days).toFixed(2)}</td>
       <td>${t.accrual_method === 'monthly' ? 'Monthly accrual' : 'Immediate'}</td>
       <td><span class="status-pill status-${t.is_active ? 'active' : 'terminated'}">${t.is_active ? 'Active' : 'Inactive'}</span></td>
       <td><button type="button" class="ghost-button leave-type-edit-btn" data-id="${t.id}">Edit</button></td>
