@@ -260,11 +260,15 @@ function entitlementForYear(employee, leaveType, yearStart, yearEnd, asOfStr) {
   return annual;
 }
 
-function usedDaysForYear(employeeId, leaveTypeId, yearStart, yearEnd, asOfStr) {
-  const cappedEnd = asOfStr < yearEnd ? asOfStr : yearEnd;
+// Approved leave is committed the moment it's approved, so it counts
+// against the balance right away even if its dates are still in the
+// future -- this prevents an admin from approving overlapping requests
+// against a balance that looks unspent only because the leave hasn't
+// started yet.
+function usedDaysForYear(employeeId, leaveTypeId, yearStart, yearEnd) {
   return applicationsCache
     .filter(a => a.employee_id === employeeId && a.leave_type_id === leaveTypeId && a.status === 'approved'
-      && a.start_date >= yearStart && a.start_date <= cappedEnd)
+      && a.start_date >= yearStart && a.start_date <= yearEnd)
     .reduce((sum, a) => sum + toNumber(a.days_requested), 0);
 }
 
@@ -289,7 +293,7 @@ function adjustmentDaysForYear(employeeId, leaveTypeId, yearStart, yearEnd, asOf
 function computeLeaveBalanceBreakdown(employee, leaveType, asOfStr, depth = 0) {
   const { start: yearStart, end: yearEnd, year } = leaveYearBounds(asOfStr);
   const entitlement = entitlementForYear(employee, leaveType, yearStart, yearEnd, asOfStr);
-  const used = usedDaysForYear(employee.id, leaveType.id, yearStart, yearEnd, asOfStr);
+  const used = usedDaysForYear(employee.id, leaveType.id, yearStart, yearEnd);
   const adjusted = adjustmentDaysForYear(employee.id, leaveType.id, yearStart, yearEnd, asOfStr);
 
   let carryIn = 0;
