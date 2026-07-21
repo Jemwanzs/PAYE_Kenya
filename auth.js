@@ -24,6 +24,14 @@ export { supabase };
 const TRIAL_DAYS = 1;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Developer/support account(s) get a longer trial so day-to-day QA and
+// support work isn't gated behind buying day-passes. Keyed by email
+// (not is_admin) so it's a time-boxed trial extension, not permanent
+// unlimited access — once the listed number of days has elapsed since
+// trial_started_at, it behaves like anyone else's expired trial and
+// needs a day-pass same as normal.
+const EXTENDED_TRIAL_EMAILS = { 'jamosammy@gmail.com': 60 };
+
 // Keep in sync with the authoritative price list in api/_dayPackages.js.
 const DAY_PACKAGES = [
   { days: 1, amount: 200 },
@@ -99,8 +107,9 @@ function computeAccess(profile) {
     return { hasAccess: true, isAdmin: true, inTrial: false, hasPaidAccess: false, trialDaysLeft: 0, paidDaysLeft: 0 };
   }
 
+  const trialDays = EXTENDED_TRIAL_EMAILS[profile.email] ?? TRIAL_DAYS;
   const now = Date.now();
-  const trialEndsAt = new Date(profile.trial_started_at).getTime() + TRIAL_DAYS * DAY_MS;
+  const trialEndsAt = new Date(profile.trial_started_at).getTime() + trialDays * DAY_MS;
   const paidUntil = profile.access_expires_at ? new Date(profile.access_expires_at).getTime() : 0;
   const inTrial = now < trialEndsAt;
   const hasPaidAccess = now < paidUntil;
