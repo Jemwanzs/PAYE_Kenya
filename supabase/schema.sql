@@ -265,6 +265,8 @@ create table public.leave_applications (
   end_date             date not null,
   is_partial_day       boolean not null default false,
   partial_hours        numeric,
+  partial_start_time   time,
+  partial_end_time     time,
   days_requested       numeric not null,
   reason               text,
   documentation_note   text,

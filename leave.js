@@ -24,10 +24,13 @@ const leaveApplyError = document.getElementById('leaveApplyError');
 const leaveApplyEmployee = document.getElementById('leaveApplyEmployee');
 const leaveApplyType = document.getElementById('leaveApplyType');
 const leaveApplyStart = document.getElementById('leaveApplyStart');
+const leaveApplyEndRow = document.getElementById('leaveApplyEndRow');
 const leaveApplyEnd = document.getElementById('leaveApplyEnd');
 const leaveApplyPartialRow = document.getElementById('leaveApplyPartialRow');
 const leaveApplyIsPartial = document.getElementById('leaveApplyIsPartial');
-const leaveApplyHours = document.getElementById('leaveApplyHours');
+const leaveApplyPartialTimeRow = document.getElementById('leaveApplyPartialTimeRow');
+const leaveApplyHoursFrom = document.getElementById('leaveApplyHoursFrom');
+const leaveApplyHoursTo = document.getElementById('leaveApplyHoursTo');
 const leaveApplyReason = document.getElementById('leaveApplyReason');
 const leaveApplyDocRow = document.getElementById('leaveApplyDocRow');
 const leaveApplyDoc = document.getElementById('leaveApplyDoc');
@@ -69,6 +72,9 @@ const leaveTypeEligEmployeeType = document.getElementById('leaveTypeEligEmployee
 const leaveTypeEligDepartment = document.getElementById('leaveTypeEligDepartment');
 const leaveTypeEligJobPosition = document.getElementById('leaveTypeEligJobPosition');
 const leaveTypeEligEmployee = document.getElementById('leaveTypeEligEmployee');
+const leaveTypeEligEmployeeSearch = document.getElementById('leaveTypeEligEmployeeSearch');
+const leaveTypeEligEmployeeSelectAllBtn = document.getElementById('leaveTypeEligEmployeeSelectAllBtn');
+const leaveTypeEligEmployeeClearBtn = document.getElementById('leaveTypeEligEmployeeClearBtn');
 
 const leaveCalendarTitle = document.getElementById('leaveCalendarTitle');
 const leaveCalendarPrevBtn = document.getElementById('leaveCalendarPrevBtn');
@@ -186,7 +192,18 @@ function employeeName(employee) {
 
 function isEmployeeEligibleForType(employee, leaveType) {
   const elig = leaveType.eligibility || {};
-  if ((elig.specific_employee_ids || []).includes(employee.id)) return true;
+  const specificIds = elig.specific_employee_ids || [];
+  const hasCriteria = (elig.genders || []).length || (elig.employee_types || []).length
+    || (elig.departments || []).length || (elig.job_positions || []).length;
+
+  if (!hasCriteria) {
+    // No gender/type/department/position filter set: a non-empty
+    // specific-employees list becomes a standalone whitelist. If that's
+    // empty too, there's genuinely no restriction — everyone qualifies.
+    return specificIds.length ? specificIds.includes(employee.id) : true;
+  }
+
+  if (specificIds.includes(employee.id)) return true;
   if ((elig.genders || []).length && !elig.genders.includes(employee.gender)) return false;
   if ((elig.employee_types || []).length && !elig.employee_types.includes(employee.employee_type)) return false;
   if ((elig.departments || []).length && !elig.departments.includes(employee.department)) return false;
@@ -555,6 +572,7 @@ applyLeaveBtn.addEventListener('click', () => {
   leaveApplyPartialRow.hidden = true;
   leaveApplyDocRow.hidden = true;
   leaveApplyBalanceHint.textContent = '';
+  syncPartialDayUi();
 
   leaveApplyEmployeeDropdown.setOptions(
     employeesCache.filter(e => e.status === 'active').map(e => ({ value: e.id, label: employeeName(e) }))
@@ -584,16 +602,39 @@ leaveApplyEmployee.addEventListener('change', () => {
   refreshLeaveApplyTypeOptions();
   updateLeaveApplyPreview();
 });
-leaveApplyStart.addEventListener('change', () => { refreshLeaveApplyTypeOptions(); updateLeaveApplyPreview(); });
+leaveApplyStart.addEventListener('change', () => {
+  // Partial-day leave only ever covers its start date — keep end_date
+  // pinned to it so a stale range can't sneak into the submitted request.
+  if (leaveApplyIsPartial.checked) leaveApplyEnd.value = leaveApplyStart.value;
+  refreshLeaveApplyTypeOptions();
+  updateLeaveApplyPreview();
+});
 leaveApplyEnd.addEventListener('change', updateLeaveApplyPreview);
-leaveApplyIsPartial.addEventListener('change', updateLeaveApplyPreview);
-leaveApplyHours.addEventListener('input', updateLeaveApplyPreview);
+
+// Checking "partial day" collapses the date range down to the single
+// start date and swaps the free-form hours count for an explicit
+// from/to time range, so a partial-day request can't accidentally span
+// multiple dates or an ambiguous number of hours.
+function syncPartialDayUi() {
+  const isPartial = leaveApplyIsPartial.checked;
+  leaveApplyEndRow.hidden = isPartial;
+  leaveApplyEnd.required = !isPartial;
+  leaveApplyPartialTimeRow.hidden = !isPartial;
+  leaveApplyHoursFrom.required = isPartial;
+  leaveApplyHoursTo.required = isPartial;
+  if (isPartial) leaveApplyEnd.value = leaveApplyStart.value;
+}
+
+leaveApplyIsPartial.addEventListener('change', () => { syncPartialDayUi(); updateLeaveApplyPreview(); });
+leaveApplyHoursFrom.addEventListener('change', updateLeaveApplyPreview);
+leaveApplyHoursTo.addEventListener('change', updateLeaveApplyPreview);
 
 leaveApplyType.addEventListener('change', () => {
   const type = leaveTypesCache.find(t => t.id === leaveApplyType.value);
   leaveApplyPartialRow.hidden = !type?.allow_partial_day;
   leaveApplyDocRow.hidden = !type?.requires_documentation;
   if (!type?.allow_partial_day) leaveApplyIsPartial.checked = false;
+  syncPartialDayUi();
   updateLeaveApplyPreview();
 });
 
@@ -611,9 +652,17 @@ function updateLeaveApplyPreview() {
     `This request is ${days} day(s). Current balance: ${balanceBefore.toFixed(2)} day(s). Balance after: ${balanceAfter.toFixed(2)} day(s)${type.allow_negative_balance ? '' : (balanceAfter < 0 ? ' — exceeds available balance' : '')}.`;
 }
 
+function partialHoursRequested() {
+  if (!leaveApplyHoursFrom.value || !leaveApplyHoursTo.value) return 0;
+  const [fh, fm] = leaveApplyHoursFrom.value.split(':').map(Number);
+  const [th, tm] = leaveApplyHoursTo.value.split(':').map(Number);
+  const hours = (th + tm / 60) - (fh + fm / 60);
+  return hours > 0 ? hours : 0;
+}
+
 function computeRequestedDays(type) {
   if (leaveApplyIsPartial.checked && type?.allow_partial_day) {
-    const hours = toNumber(leaveApplyHours.value);
+    const hours = partialHoursRequested();
     const hoursPerDay = toNumber(settingsCache?.work_hours_per_day) || 8;
     return hoursPerDay > 0 ? Math.round((hours / hoursPerDay) * 100) / 100 : 0;
   }
@@ -626,13 +675,26 @@ leaveApplyView.addEventListener('submit', async event => {
 
   const employee = employeesCache.find(e => e.id === leaveApplyEmployee.value);
   const type = leaveTypesCache.find(t => t.id === leaveApplyType.value);
+  const isPartial = leaveApplyIsPartial.checked && type?.allow_partial_day;
+
+  if (isPartial) leaveApplyEnd.value = leaveApplyStart.value;
 
   if (!employee || !type || !leaveApplyStart.value || !leaveApplyEnd.value) {
     leaveApplyError.textContent = 'Employee, leave type, and both dates are required.';
     leaveApplyError.hidden = false;
     return;
   }
-  if (leaveApplyEnd.value < leaveApplyStart.value) {
+  if (isPartial && (!leaveApplyHoursFrom.value || !leaveApplyHoursTo.value)) {
+    leaveApplyError.textContent = 'Both a from and to time are required for a partial-day request.';
+    leaveApplyError.hidden = false;
+    return;
+  }
+  if (isPartial && partialHoursRequested() <= 0) {
+    leaveApplyError.textContent = 'The "to" time must be after the "from" time.';
+    leaveApplyError.hidden = false;
+    return;
+  }
+  if (!isPartial && leaveApplyEnd.value < leaveApplyStart.value) {
     leaveApplyError.textContent = 'End date must be on or after the start date.';
     leaveApplyError.hidden = false;
     return;
@@ -678,8 +740,10 @@ leaveApplyView.addEventListener('submit', async event => {
       leave_type_id: type.id,
       start_date: leaveApplyStart.value,
       end_date: leaveApplyEnd.value,
-      is_partial_day: leaveApplyIsPartial.checked && type.allow_partial_day,
-      partial_hours: leaveApplyIsPartial.checked && type.allow_partial_day ? toNumber(leaveApplyHours.value) : null,
+      is_partial_day: isPartial,
+      partial_hours: isPartial ? partialHoursRequested() : null,
+      partial_start_time: isPartial ? leaveApplyHoursFrom.value : null,
+      partial_end_time: isPartial ? leaveApplyHoursTo.value : null,
       days_requested: days,
       reason: leaveApplyReason.value.trim() || null,
       documentation_note: leaveApplyDoc.value.trim() || null,
@@ -720,19 +784,76 @@ function checklistHtml(items, checkedValues, name) {
   `).join('') || '<p class="hint">None configured under Settings yet.</p>';
 }
 
+// Checkboxes stay in the DOM regardless of the search filter (only their
+// wrapping <label> is hidden) so the browser's native checked state
+// survives searching for someone else and coming back.
+function renderEligibilityEmployeeChecklist(checkedIds) {
+  const activeEmployees = employeesCache.filter(e => e.status === 'active');
+  leaveTypeEligEmployee.innerHTML = activeEmployees.length
+    ? activeEmployees.map(e => `
+        <label data-search="${employeeName(e).toLowerCase()}">
+          <input type="checkbox" name="eligEmployee" value="${e.id}" ${checkedIds.includes(e.id) ? 'checked' : ''}/> ${employeeName(e)}
+        </label>
+      `).join('')
+    : '<p class="hint">No active employees yet.</p>';
+}
+
+function filterEligibilityEmployeeChecklist(query) {
+  const q = query.trim().toLowerCase();
+  leaveTypeEligEmployee.querySelectorAll('label[data-search]').forEach(label => {
+    label.hidden = q ? !label.dataset.search.includes(q) : false;
+  });
+}
+
+function employeeMatchesCriteria(employee, genders, employeeTypes, departments, jobPositions) {
+  if (genders.length && !genders.includes(employee.gender)) return false;
+  if (employeeTypes.length && !employeeTypes.includes(employee.employee_type)) return false;
+  if (departments.length && !departments.includes(employee.department)) return false;
+  if (jobPositions.length && !jobPositions.includes(employee.job_position)) return false;
+  return true;
+}
+
+// Whenever a gender/employee-type/department/job-position box changes,
+// re-check the "Specific employees" list to exactly whoever currently
+// matches — so it always shows a live, unambiguous picture of who's
+// eligible instead of going stale or requiring a manual re-tick.
+function syncSpecificEmployeesFromCriteria() {
+  const genders = checkedValues(leaveTypeEligGender);
+  const employeeTypes = checkedValues(leaveTypeEligEmployeeType);
+  const departments = checkedValues(leaveTypeEligDepartment);
+  const jobPositions = checkedValues(leaveTypeEligJobPosition);
+  const hasCriteria = genders.length || employeeTypes.length || departments.length || jobPositions.length;
+
+  const matchingIds = hasCriteria
+    ? employeesCache.filter(e => e.status === 'active' && employeeMatchesCriteria(e, genders, employeeTypes, departments, jobPositions)).map(e => e.id)
+    : [];
+  renderEligibilityEmployeeChecklist(matchingIds);
+  filterEligibilityEmployeeChecklist(leaveTypeEligEmployeeSearch.value);
+}
+
+[leaveTypeEligGender, leaveTypeEligEmployeeType, leaveTypeEligDepartment, leaveTypeEligJobPosition].forEach(container => {
+  container.addEventListener('change', syncSpecificEmployeesFromCriteria);
+});
+
+leaveTypeEligEmployeeSearch.addEventListener('input', () => filterEligibilityEmployeeChecklist(leaveTypeEligEmployeeSearch.value));
+leaveTypeEligEmployeeSelectAllBtn.addEventListener('click', () => {
+  leaveTypeEligEmployee.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+});
+leaveTypeEligEmployeeClearBtn.addEventListener('click', () => {
+  leaveTypeEligEmployee.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+});
+
 function populateLeaveTypeEligibilityLists(eligibility = {}) {
   const departments = settingsCache?.departments || [];
   const jobPositions = settingsCache?.job_positions || [];
-  const activeEmployees = employeesCache.filter(e => e.status === 'active');
 
   leaveTypeEligDepartment.innerHTML = checklistHtml(departments, eligibility.departments || [], 'eligDept');
   leaveTypeEligJobPosition.innerHTML = checklistHtml(jobPositions, eligibility.job_positions || [], 'eligJob');
-  leaveTypeEligEmployee.innerHTML = activeEmployees.map(e => `
-    <label><input type="checkbox" name="eligEmployee" value="${e.id}" ${(eligibility.specific_employee_ids || []).includes(e.id) ? 'checked' : ''}/> ${employeeName(e)}</label>
-  `).join('') || '<p class="hint">No active employees yet.</p>';
-
   [...leaveTypeEligGender.querySelectorAll('input')].forEach(cb => { cb.checked = (eligibility.genders || []).includes(cb.value); });
   [...leaveTypeEligEmployeeType.querySelectorAll('input')].forEach(cb => { cb.checked = (eligibility.employee_types || []).includes(cb.value); });
+
+  leaveTypeEligEmployeeSearch.value = '';
+  renderEligibilityEmployeeChecklist(eligibility.specific_employee_ids || []);
 }
 
 function resetLeaveTypeForm() {

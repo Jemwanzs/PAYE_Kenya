@@ -764,12 +764,15 @@
           <label><span>Leave type <span class="required-asterisk">*</span></span>
             <select id="leaveApplyType" required><option value="">— Select employee first —</option></select>
           </label>
-          <label><span>Start date <span class="required-asterisk">*</span></span><input type="date" id="leaveApplyStart" required /></label>
-          <label><span>End date <span class="required-asterisk">*</span></span><input type="date" id="leaveApplyEnd" required /></label>
+          <label><span id="leaveApplyStartLabel">Start date <span class="required-asterisk">*</span></span><input type="date" id="leaveApplyStart" required /></label>
+          <label id="leaveApplyEndRow"><span>End date <span class="required-asterisk">*</span></span><input type="date" id="leaveApplyEnd" required /></label>
         </div>
-        <div class="field-grid two-col" id="leaveApplyPartialRow" hidden>
-          <label><input type="checkbox" id="leaveApplyIsPartial" /> Partial day (a few hours instead of a full day)</label>
-          <label>Hours requested <input type="number" id="leaveApplyHours" min="0" step="0.5" /></label>
+        <div id="leaveApplyPartialRow" hidden>
+          <label><input type="checkbox" id="leaveApplyIsPartial" /> Partial day (a few hours instead of a full day, on the start date only)</label>
+        </div>
+        <div class="field-grid two-col" id="leaveApplyPartialTimeRow" hidden>
+          <label><span>From <span class="required-asterisk">*</span></span><input type="time" id="leaveApplyHoursFrom" /></label>
+          <label><span>To <span class="required-asterisk">*</span></span><input type="time" id="leaveApplyHoursTo" /></label>
         </div>
         <label>Reason <textarea id="leaveApplyReason" rows="2"></textarea></label>
         <label id="leaveApplyDocRow" hidden>Documentation reference / details <span class="required-asterisk">*</span>
@@ -836,7 +839,7 @@
 
         <details open class="input-group">
           <summary><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>Eligibility</span></summary>
-          <p class="hint">Leave every box in a category unchecked to allow all. A specifically-checked employee is always eligible regardless of the other filters.</p>
+          <p class="hint">Leave every box in a category unchecked to allow all. "Specific employees" defaults to everyone who already matches the criteria above — edit it directly to add exceptions, or use it alone (with no other criteria) as a plain employee whitelist.</p>
           <div class="eligibility-section">
             <span class="field-label">Gender</span>
             <div class="checkbox-grid" id="leaveTypeEligGender">
@@ -863,7 +866,12 @@
             <div class="checkbox-grid eligibility-checklist" id="leaveTypeEligJobPosition"></div>
           </div>
           <div class="eligibility-section">
-            <span class="field-label">Specific employees (always eligible)</span>
+            <span class="field-label">Specific employees</span>
+            <div class="eligibility-toolbar">
+              <input type="text" id="leaveTypeEligEmployeeSearch" placeholder="Search employees..." autocomplete="off" />
+              <button type="button" class="ghost-button" id="leaveTypeEligEmployeeSelectAllBtn">Select all</button>
+              <button type="button" class="ghost-button" id="leaveTypeEligEmployeeClearBtn">Clear all</button>
+            </div>
             <div class="checkbox-grid eligibility-checklist" id="leaveTypeEligEmployee"></div>
           </div>
         </details>
