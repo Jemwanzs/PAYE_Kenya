@@ -1071,6 +1071,23 @@ textarea {
   background: rgba(255, 250, 243, .75);
 }
 
+.comp-history-add-row,
+.comp-history-add-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+  align-items: end;
+}
+.comp-history-add-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.comp-history-add-row button,
+.comp-history-add-grid button { height: 46px; }
+
+@media (max-width: 760px) {
+  .comp-history-add-row,
+  .comp-history-add-grid { grid-template-columns: 1fr 1fr; }
+}
+
 .stat-impact-note {
   padding: 10px 12px;
   border-radius: 14px;

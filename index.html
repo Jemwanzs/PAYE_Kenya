@@ -391,11 +391,18 @@
       <div class="employees-directory" id="employeesDirectoryView">
         <div class="panel-header">
           <h2>Employees</h2>
-          <button type="button" class="primary-button" id="addEmployeeBtn">
-            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-            Add employee
-          </button>
+          <div class="hero-actions">
+            <button type="button" class="ghost-button" id="assignMissingNumbersBtn" hidden>
+              <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+              Assign missing numbers
+            </button>
+            <button type="button" class="primary-button" id="addEmployeeBtn">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              Add employee
+            </button>
+          </div>
         </div>
+        <p class="auth-info" id="assignMissingNumbersInfo" hidden></p>
 
         <div class="employee-status-filter tab-bar" role="tablist" aria-label="Employee status filter">
           <button type="button" class="tab-btn" data-status-filter="active" aria-selected="true">Active</button>
@@ -530,6 +537,68 @@
             <label>Education insurance premium <input data-money id="employeeEducationInsurance" type="text" placeholder="0.00" /></label>
             <label>Other post-tax deductions <input data-money id="employeeOtherDeductions" type="text" placeholder="0.00" /></label>
           </div>
+          <p class="hint">These are the default values used whenever no dated entry below is active for a given payroll period.</p>
+        </details>
+
+        <details class="input-group" id="compHistoryBasicSection">
+          <summary><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Basic pay history</span></summary>
+          <p class="hint" id="compHistoryBasicHint">Optional — only needed if basic pay changes over time (e.g. a raise). Add dated entries here; payroll uses whichever entry covers the run's pay period, falling back to the default above if none do.</p>
+          <label><input type="checkbox" id="compHistoryBasicShowExpired" /> Show expired entries</label>
+          <div class="employee-table-wrap">
+            <table class="employee-table" id="compHistoryBasicTable">
+              <thead><tr><th>Amount</th><th>Start</th><th>End</th><th></th></tr></thead>
+              <tbody id="compHistoryBasicTableBody"></tbody>
+            </table>
+          </div>
+          <div class="comp-history-add-row" id="compHistoryBasicAddRow">
+            <input data-money type="text" id="compHistoryBasicAmount" placeholder="Amount" inputmode="decimal" />
+            <input type="date" id="compHistoryBasicStart" title="Start date" />
+            <input type="date" id="compHistoryBasicEnd" title="End date (optional)" />
+            <button type="button" class="ghost-button" id="compHistoryBasicAddBtn">Add entry</button>
+          </div>
+          <p class="auth-error" id="compHistoryBasicError" hidden></p>
+        </details>
+
+        <details class="input-group" id="compHistoryEarningSection">
+          <summary><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v3"/><path d="M3 7v10a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-4"/></svg><span>Earnings &amp; benefits history</span></summary>
+          <p class="hint" id="compHistoryEarningHint">Optional — only needed for time-boxed amounts (overtime for a specific month, a temporary allowance, etc). Payroll uses whichever entry covers the run's pay period, falling back to the default above if none do. Pick "Other cash allowance" or "Other non-cash benefit" and give it a label to add a custom, one-off item.</p>
+          <label><input type="checkbox" id="compHistoryEarningShowExpired" /> Show expired entries</label>
+          <div class="employee-table-wrap">
+            <table class="employee-table" id="compHistoryEarningTable">
+              <thead><tr><th>Type</th><th>Amount</th><th>Start</th><th>End</th><th></th></tr></thead>
+              <tbody id="compHistoryEarningTableBody"></tbody>
+            </table>
+          </div>
+          <div class="comp-history-add-grid" id="compHistoryEarningAddRow">
+            <select id="compHistoryEarningType"></select>
+            <input type="text" id="compHistoryEarningLabel" placeholder="Custom label" hidden />
+            <input data-money type="text" id="compHistoryEarningAmount" placeholder="Amount" inputmode="decimal" />
+            <input type="date" id="compHistoryEarningStart" title="Start date" />
+            <input type="date" id="compHistoryEarningEnd" title="End date (optional)" />
+            <button type="button" class="ghost-button" id="compHistoryEarningAddBtn">Add entry</button>
+          </div>
+          <p class="auth-error" id="compHistoryEarningError" hidden></p>
+        </details>
+
+        <details class="input-group" id="compHistoryDeductionSection">
+          <summary><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg><span>Deductions history</span></summary>
+          <p class="hint" id="compHistoryDeductionHint">Optional — only needed for time-boxed deductions (a loan repayment for a few months, etc). Payroll uses whichever entry covers the run's pay period, falling back to the default above if none do. Pick "Other deduction" and give it a label to add a custom, one-off item.</p>
+          <label><input type="checkbox" id="compHistoryDeductionShowExpired" /> Show expired entries</label>
+          <div class="employee-table-wrap">
+            <table class="employee-table" id="compHistoryDeductionTable">
+              <thead><tr><th>Type</th><th>Amount</th><th>Start</th><th>End</th><th></th></tr></thead>
+              <tbody id="compHistoryDeductionTableBody"></tbody>
+            </table>
+          </div>
+          <div class="comp-history-add-grid" id="compHistoryDeductionAddRow">
+            <select id="compHistoryDeductionType"></select>
+            <input type="text" id="compHistoryDeductionLabel" placeholder="Custom label" hidden />
+            <input type="text" id="compHistoryDeductionAmount" placeholder="Amount" inputmode="decimal" />
+            <input type="date" id="compHistoryDeductionStart" title="Start date" />
+            <input type="date" id="compHistoryDeductionEnd" title="End date (optional)" />
+            <button type="button" class="ghost-button" id="compHistoryDeductionAddBtn">Add entry</button>
+          </div>
+          <p class="auth-error" id="compHistoryDeductionError" hidden></p>
         </details>
 
         <div class="employee-form-actions">
@@ -1094,6 +1163,8 @@
           <div class="field-grid two-col">
             <label>Prefix <input type="text" id="settingsEmpNumPrefix" placeholder="e.g. EMP" /></label>
             <label>Digits (zero-padded) <input type="number" id="settingsEmpNumPadding" min="1" max="8" step="1" /></label>
+            <label>Separator <input type="text" id="settingsEmpNumSeparator" placeholder="e.g. - or / (optional)" maxlength="3" /></label>
+            <label></label>
             <label><input type="checkbox" id="settingsEmpNumIncludeYear" /> Include current year (e.g. 2026)</label>
             <label><input type="checkbox" id="settingsEmpNumIncludeMonth" /> Include current month (e.g. 07)</label>
           </div>

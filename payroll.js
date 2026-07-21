@@ -68,16 +68,31 @@ function settingsFromRow(row) {
   };
 }
 
-function valuesFromEmployee(employee) {
+// A component with no dated employee_compensation_items entries at all
+// keeps using the flat employees.compensation value, unchanged — dated
+// entries only take over (summed, for whichever ones overlap the pay
+// period) once at least one exists for that employee + component, so
+// employees nobody has migrated to dated entries are unaffected.
+function resolveComponentAmount(items, employeeId, componentKey, periodStart, periodEnd, legacyAmount) {
+  const matches = items.filter(i => i.employee_id === employeeId && i.component_key === componentKey);
+  if (!matches.length) return legacyAmount;
+  return matches
+    .filter(i => i.start_date <= periodEnd && (!i.end_date || i.end_date >= periodStart))
+    .reduce((sum, i) => sum + toNumber(i.amount), 0);
+}
+
+function valuesFromEmployee(employee, compensationItems = [], periodStart, periodEnd) {
   const comp = employee.compensation || {};
+  const resolve = (key, legacy) => resolveComponentAmount(compensationItems, employee.id, key, periodStart, periodEnd, toNumber(legacy));
+
   const values = {};
-  earningComponents.forEach(item => { values[item.id] = toNumber(comp[item.id]); });
-  values.basicPay = toNumber(comp.basicPay);
-  values.employeePensionRate = toNumber(comp.employeePensionRate);
-  values.employerPensionRate = toNumber(comp.employerPensionRate);
-  values.lifeInsurance = toNumber(comp.lifeInsurance);
-  values.educationInsurance = toNumber(comp.educationInsurance);
-  values.otherDeductions = toNumber(comp.otherDeductions);
+  earningComponents.forEach(item => { values[item.id] = resolve(item.id, comp[item.id]); });
+  values.basicPay = resolve('basicPay', comp.basicPay);
+  values.employeePensionRate = resolve('employeePensionRate', comp.employeePensionRate);
+  values.employerPensionRate = resolve('employerPensionRate', comp.employerPensionRate);
+  values.lifeInsurance = resolve('lifeInsurance', comp.lifeInsurance);
+  values.educationInsurance = resolve('educationInsurance', comp.educationInsurance);
+  values.otherDeductions = resolve('otherDeductions', comp.otherDeductions);
   return values;
 }
 
@@ -102,8 +117,8 @@ async function loadRunSettings() {
   });
 }
 
-function computePayslipRow({ runId, userId, employee, isFinalDues, settings }) {
-  const values = valuesFromEmployee(employee);
+function computePayslipRow({ runId, userId, employee, isFinalDues, settings, compensationItems, periodStart, periodEnd }) {
+  const values = valuesFromEmployee(employee, compensationItems, periodStart, periodEnd);
   const toggles = togglesFromEmployee(employee);
   const results = computePayroll({ classification: employee.employee_type, basicPay: values.basicPay, values, toggles, settings });
 
@@ -342,10 +357,21 @@ createPayrollRunBtn.addEventListener('click', async () => {
       runId = run.id;
     }
 
+    const selectedEmployeeIds = selected.map(checkbox => checkbox.dataset.employeeId);
+    const { data: compensationItems, error: itemsError } = await supabase
+      .from('employee_compensation_items')
+      .select('*')
+      .in('employee_id', selectedEmployeeIds);
+    if (itemsError) throw itemsError;
+
     const payslipRows = selected.map(checkbox => {
       const employee = employeesCache.find(e => e.id === checkbox.dataset.employeeId);
       const isFinalDues = checkbox.dataset.finalDues === 'true';
-      return computePayslipRow({ runId, userId: user.id, employee, isFinalDues, settings });
+      return computePayslipRow({
+        runId, userId: user.id, employee, isFinalDues, settings,
+        compensationItems: compensationItems || [],
+        periodStart: payrollPeriodStart.value, periodEnd: payrollPeriodEnd.value
+      });
     });
 
     const { error: payslipError } = await supabase.from('payslips').insert(payslipRows);
@@ -476,12 +502,22 @@ recalcRunBtn.addEventListener('click', async () => {
     if (employeesError) throw employeesError;
     const employeeById = new Map((freshEmployees || []).map(e => [e.id, e]));
 
+    const { data: compensationItems, error: itemsError } = await supabase
+      .from('employee_compensation_items')
+      .select('*')
+      .in('employee_id', employeeIds);
+    if (itemsError) throw itemsError;
+
     const settings = await loadRunSettings();
 
     for (const payslip of payslips || []) {
       const employee = employeeById.get(payslip.employee_id);
       if (!employee) continue;
-      const row = computePayslipRow({ runId: currentRunId, userId: payslip.user_id, employee, isFinalDues: payslip.is_final_dues, settings });
+      const row = computePayslipRow({
+        runId: currentRunId, userId: payslip.user_id, employee, isFinalDues: payslip.is_final_dues, settings,
+        compensationItems: compensationItems || [],
+        periodStart: currentRunMeta?.period_start, periodEnd: currentRunMeta?.period_end
+      });
       const { error: updateError } = await supabase.from('payslips').update({
         employee_snapshot: row.employee_snapshot,
         compensation_snapshot: row.compensation_snapshot,

@@ -12,6 +12,8 @@ const employeeTypeLabels = {
 const directoryView = document.getElementById('employeesDirectoryView');
 const formView = document.getElementById('employeeFormView');
 const addEmployeeBtn = document.getElementById('addEmployeeBtn');
+const assignMissingNumbersBtn = document.getElementById('assignMissingNumbersBtn');
+const assignMissingNumbersInfo = document.getElementById('assignMissingNumbersInfo');
 const statusFilterButtons = [...document.querySelectorAll('[data-status-filter]')];
 const employeeTableBody = document.getElementById('employeeTableBody');
 const employeesEmptyState = document.getElementById('employeesEmptyState');
@@ -49,6 +51,7 @@ const settingsPage = document.getElementById('settingsPage');
 
 const settingsEmpNumPrefix = document.getElementById('settingsEmpNumPrefix');
 const settingsEmpNumPadding = document.getElementById('settingsEmpNumPadding');
+const settingsEmpNumSeparator = document.getElementById('settingsEmpNumSeparator');
 const settingsEmpNumIncludeYear = document.getElementById('settingsEmpNumIncludeYear');
 const settingsEmpNumIncludeMonth = document.getElementById('settingsEmpNumIncludeMonth');
 const settingsEmpNumPreview = document.getElementById('settingsEmpNumPreview');
@@ -77,7 +80,7 @@ function defaultSettings() {
     allowable_deduction_cap: 30000, per_diem_threshold: 10000, days_in_month: 30,
     secondary_flat_rate: 35, contractor_wht_rate: 5, pwd_exemption: 150000,
     job_positions: [], departments: [], sub_departments: [],
-    employee_number_prefix: 'EMP', employee_number_padding: 3,
+    employee_number_prefix: 'EMP', employee_number_padding: 3, employee_number_separator: '',
     employee_number_include_year: false, employee_number_include_month: false,
     employee_number_next: 1,
     business_name: '',
@@ -128,6 +131,287 @@ function attachMoneyBlurFormatting(scope) {
     });
   });
 }
+
+// ---------------------------------------------------------------------
+// Compensation history — dated entries that override the flat
+// compensation/optional-deduction fields above for whichever payroll
+// period they cover. A component with no dated entries just keeps
+// using the flat field, unchanged, so existing employees nobody
+// touches this for are completely unaffected.
+// ---------------------------------------------------------------------
+
+const EARNING_TYPE_OPTIONS = earningComponents.map(item => ({
+  key: item.id,
+  label: item.label,
+  bucket: item.id === 'otherCashAllowance' || item.id === 'otherNonCashBenefit'
+}));
+
+const DEDUCTION_TYPE_OPTIONS = [
+  { key: 'employeePensionRate', label: 'Employee pension %', bucket: false },
+  { key: 'employerPensionRate', label: 'Employer pension %', bucket: false },
+  { key: 'lifeInsurance', label: 'Life insurance premium', bucket: false },
+  { key: 'educationInsurance', label: 'Education insurance premium', bucket: false },
+  { key: 'otherDeductions', label: 'Other deduction', bucket: true }
+];
+
+const COMP_HISTORY_SECTIONS = {
+  basic: {
+    types: [{ key: 'basicPay', label: 'Basic pay', bucket: false }],
+    hasTypeSelect: false,
+    ids: {
+      showExpired: 'compHistoryBasicShowExpired', tableBody: 'compHistoryBasicTableBody',
+      amount: 'compHistoryBasicAmount', start: 'compHistoryBasicStart', end: 'compHistoryBasicEnd',
+      addBtn: 'compHistoryBasicAddBtn', error: 'compHistoryBasicError', typeSelect: null, labelInput: null
+    }
+  },
+  earning: {
+    types: EARNING_TYPE_OPTIONS,
+    hasTypeSelect: true,
+    ids: {
+      showExpired: 'compHistoryEarningShowExpired', tableBody: 'compHistoryEarningTableBody',
+      amount: 'compHistoryEarningAmount', start: 'compHistoryEarningStart', end: 'compHistoryEarningEnd',
+      addBtn: 'compHistoryEarningAddBtn', error: 'compHistoryEarningError',
+      typeSelect: 'compHistoryEarningType', labelInput: 'compHistoryEarningLabel'
+    }
+  },
+  deduction: {
+    types: DEDUCTION_TYPE_OPTIONS,
+    hasTypeSelect: true,
+    ids: {
+      showExpired: 'compHistoryDeductionShowExpired', tableBody: 'compHistoryDeductionTableBody',
+      amount: 'compHistoryDeductionAmount', start: 'compHistoryDeductionStart', end: 'compHistoryDeductionEnd',
+      addBtn: 'compHistoryDeductionAddBtn', error: 'compHistoryDeductionError',
+      typeSelect: 'compHistoryDeductionType', labelInput: 'compHistoryDeductionLabel'
+    }
+  }
+};
+
+let compensationItemsCache = [];
+const compHistoryEditingId = { basic: null, earning: null, deduction: null };
+
+function todayStrLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function compHistoryEl(sectionKey, part) {
+  const id = COMP_HISTORY_SECTIONS[sectionKey].ids[part];
+  return id ? document.getElementById(id) : null;
+}
+
+function compHistoryItemsFor(sectionKey) {
+  const keys = COMP_HISTORY_SECTIONS[sectionKey].types.map(t => t.key);
+  return compensationItemsCache.filter(i => keys.includes(i.component_key));
+}
+
+async function loadCompensationItems(employeeId) {
+  if (!employeeId) { compensationItemsCache = []; return; }
+  const { data } = await supabase.from('employee_compensation_items').select('*').eq('employee_id', employeeId).order('start_date', { ascending: false });
+  compensationItemsCache = data || [];
+}
+
+function renderCompHistoryTypeSelect(sectionKey) {
+  const cfg = COMP_HISTORY_SECTIONS[sectionKey];
+  if (!cfg.hasTypeSelect) return;
+  const select = compHistoryEl(sectionKey, 'typeSelect');
+  select.innerHTML = cfg.types.map(t => `<option value="${t.key}">${t.label}</option>`).join('');
+  select.addEventListener('change', () => {
+    const type = cfg.types.find(t => t.key === select.value);
+    const labelInput = compHistoryEl(sectionKey, 'labelInput');
+    labelInput.hidden = !type?.bucket;
+    if (!type?.bucket) labelInput.value = '';
+  });
+  select.dispatchEvent(new Event('change'));
+}
+
+function renderCompHistorySection(sectionKey) {
+  const cfg = COMP_HISTORY_SECTIONS[sectionKey];
+  const showExpired = compHistoryEl(sectionKey, 'showExpired').checked;
+  const today = todayStrLocal();
+  const items = compHistoryItemsFor(sectionKey)
+    .filter(i => showExpired || !i.end_date || i.end_date >= today)
+    .sort((a, b) => (a.start_date < b.start_date ? 1 : -1));
+
+  const colCount = (cfg.hasTypeSelect ? 1 : 0) + 4;
+  const tbody = compHistoryEl(sectionKey, 'tableBody');
+  tbody.innerHTML = items.length
+    ? items.map(i => `
+        <tr data-id="${i.id}">
+          ${cfg.hasTypeSelect ? `<td>${i.label}</td>` : ''}
+          <td>${rawMoney(i.amount)}</td>
+          <td>${i.start_date}</td>
+          <td>${i.end_date || '—'}</td>
+          <td>
+            <button type="button" class="ghost-button comp-history-edit-btn" data-section="${sectionKey}" data-id="${i.id}">Edit</button>
+            <button type="button" class="ghost-button comp-history-delete-btn" data-section="${sectionKey}" data-id="${i.id}">Delete</button>
+          </td>
+        </tr>
+      `).join('')
+    : `<tr><td colspan="${colCount}">No entries${showExpired ? '' : ' (or all are expired — check "Show expired entries")'}.</td></tr>`;
+}
+
+function renderAllCompHistorySections() {
+  Object.keys(COMP_HISTORY_SECTIONS).forEach(renderCompHistorySection);
+}
+
+function resetCompHistoryForm(sectionKey) {
+  compHistoryEditingId[sectionKey] = null;
+  const cfg = COMP_HISTORY_SECTIONS[sectionKey];
+  compHistoryEl(sectionKey, 'amount').value = '';
+  compHistoryEl(sectionKey, 'start').value = '';
+  compHistoryEl(sectionKey, 'end').value = '';
+  if (cfg.hasTypeSelect) {
+    compHistoryEl(sectionKey, 'typeSelect').selectedIndex = 0;
+    compHistoryEl(sectionKey, 'typeSelect').dispatchEvent(new Event('change'));
+  }
+  compHistoryEl(sectionKey, 'addBtn').textContent = 'Add entry';
+}
+
+function setCompHistoryFormsEnabled(enabled) {
+  Object.values(COMP_HISTORY_SECTIONS).forEach(cfg => {
+    [cfg.ids.amount, cfg.ids.start, cfg.ids.end, cfg.ids.addBtn, cfg.ids.typeSelect, cfg.ids.labelInput]
+      .filter(Boolean)
+      .forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !enabled; });
+  });
+}
+
+// A dated entry conflicts with another only if it shares the same
+// component AND label (so multiple differently-labelled entries under
+// a catch-all bucket like "Other deduction" can freely coexist) and
+// their date ranges overlap (open-ended end dates treated as infinite).
+function compHistoryOverlaps(aStart, aEnd, bStart, bEnd) {
+  const aEndEff = aEnd || '9999-12-31';
+  const bEndEff = bEnd || '9999-12-31';
+  return aStart <= bEndEff && bStart <= aEndEff;
+}
+
+function findConflictingCompItem(componentKey, label, startDate, endDate, excludeId) {
+  const normalizedLabel = label.trim().toLowerCase();
+  return compensationItemsCache.find(i => {
+    if (i.id === excludeId) return false;
+    if (i.component_key !== componentKey) return false;
+    if ((i.label || '').trim().toLowerCase() !== normalizedLabel) return false;
+    return compHistoryOverlaps(startDate, endDate, i.start_date, i.end_date);
+  });
+}
+
+async function submitCompHistoryEntry(sectionKey) {
+  const cfg = COMP_HISTORY_SECTIONS[sectionKey];
+  const errorEl = compHistoryEl(sectionKey, 'error');
+  errorEl.hidden = true;
+
+  if (!currentEmployeeId) {
+    errorEl.textContent = 'Save this employee first.';
+    errorEl.hidden = false;
+    return;
+  }
+
+  let componentKey, label;
+  if (cfg.hasTypeSelect) {
+    const type = cfg.types.find(t => t.key === compHistoryEl(sectionKey, 'typeSelect').value);
+    componentKey = type.key;
+    label = type.bucket ? compHistoryEl(sectionKey, 'labelInput').value.trim() : type.label;
+    if (type.bucket && !label) {
+      errorEl.textContent = 'A label is required for a custom entry.';
+      errorEl.hidden = false;
+      return;
+    }
+  } else {
+    componentKey = cfg.types[0].key;
+    label = cfg.types[0].label;
+  }
+
+  const amount = toNumber(compHistoryEl(sectionKey, 'amount').value);
+  const startDate = compHistoryEl(sectionKey, 'start').value;
+  const endDate = compHistoryEl(sectionKey, 'end').value || null;
+
+  if (!startDate) {
+    errorEl.textContent = 'A start date is required.';
+    errorEl.hidden = false;
+    return;
+  }
+  if (endDate && endDate < startDate) {
+    errorEl.textContent = 'End date must be on or after the start date.';
+    errorEl.hidden = false;
+    return;
+  }
+
+  const editingId = compHistoryEditingId[sectionKey];
+  const conflict = findConflictingCompItem(componentKey, label, startDate, endDate, editingId);
+  if (conflict) {
+    errorEl.textContent = `This overlaps an existing "${conflict.label}" entry (${conflict.start_date} to ${conflict.end_date || 'ongoing'}).`;
+    errorEl.hidden = false;
+    return;
+  }
+
+  const addBtn = compHistoryEl(sectionKey, 'addBtn');
+  addBtn.disabled = true;
+  try {
+    if (editingId) {
+      const { error } = await supabase.from('employee_compensation_items').update({
+        component_key: componentKey, label, amount, start_date: startDate, end_date: endDate, updated_at: new Date().toISOString()
+      }).eq('id', editingId);
+      if (error) throw error;
+    } else {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase.from('employee_compensation_items').insert({
+        user_id: user.id, employee_id: currentEmployeeId, component_key: componentKey, label, amount, start_date: startDate, end_date: endDate
+      });
+      if (error) throw error;
+    }
+    await loadCompensationItems(currentEmployeeId);
+    renderCompHistorySection(sectionKey);
+    resetCompHistoryForm(sectionKey);
+  } catch (err) {
+    errorEl.textContent = err.message || 'Could not save this entry.';
+    errorEl.hidden = false;
+  } finally {
+    addBtn.disabled = false;
+  }
+}
+
+async function deleteCompHistoryItem(sectionKey, id) {
+  const { error } = await supabase.from('employee_compensation_items').delete().eq('id', id);
+  if (!error) {
+    if (compHistoryEditingId[sectionKey] === id) resetCompHistoryForm(sectionKey);
+    await loadCompensationItems(currentEmployeeId);
+    renderCompHistorySection(sectionKey);
+  }
+}
+
+function wireCompHistorySection(sectionKey) {
+  const cfg = COMP_HISTORY_SECTIONS[sectionKey];
+  renderCompHistoryTypeSelect(sectionKey);
+
+  compHistoryEl(sectionKey, 'tableBody').addEventListener('click', event => {
+    const editBtn = event.target.closest('.comp-history-edit-btn');
+    const delBtn = event.target.closest('.comp-history-delete-btn');
+    if (editBtn) {
+      const item = compensationItemsCache.find(i => i.id === editBtn.dataset.id);
+      if (!item) return;
+      compHistoryEditingId[sectionKey] = item.id;
+      if (cfg.hasTypeSelect) {
+        const typeSelect = compHistoryEl(sectionKey, 'typeSelect');
+        typeSelect.value = item.component_key;
+        typeSelect.dispatchEvent(new Event('change'));
+        const type = cfg.types.find(t => t.key === item.component_key);
+        if (type?.bucket) compHistoryEl(sectionKey, 'labelInput').value = item.label;
+      }
+      compHistoryEl(sectionKey, 'amount').value = rawMoney(item.amount);
+      compHistoryEl(sectionKey, 'start').value = item.start_date;
+      compHistoryEl(sectionKey, 'end').value = item.end_date || '';
+      compHistoryEl(sectionKey, 'addBtn').textContent = 'Update entry';
+    }
+    if (delBtn) deleteCompHistoryItem(sectionKey, delBtn.dataset.id);
+  });
+
+  compHistoryEl(sectionKey, 'showExpired').addEventListener('change', () => renderCompHistorySection(sectionKey));
+  compHistoryEl(sectionKey, 'addBtn').addEventListener('click', () => submitCompHistoryEntry(sectionKey));
+}
+
+Object.keys(COMP_HISTORY_SECTIONS).forEach(wireCompHistorySection);
+attachMoneyBlurFormatting(document.getElementById('compHistoryBasicAddRow'));
+attachMoneyBlurFormatting(document.getElementById('compHistoryEarningAddRow'));
 
 // Reusable dropdown controller — same open/close/select behavior and
 // visual style as the Employee Type picker, but for a flat, dynamic list
@@ -355,7 +639,45 @@ async function loadEmployees() {
   }
 
   renderEmployeeTable(data || []);
+  checkMissingNumbers();
 }
+
+// Scoped to all employees regardless of the current status filter, so
+// the button doesn't stay hidden just because the visible tab happens
+// to be fully numbered while another status bucket isn't.
+async function checkMissingNumbers() {
+  const { count } = await supabase.from('employees').select('id', { count: 'exact', head: true }).is('employee_number', null);
+  assignMissingNumbersBtn.hidden = !count;
+}
+
+assignMissingNumbersBtn.addEventListener('click', async () => {
+  assignMissingNumbersBtn.disabled = true;
+  assignMissingNumbersInfo.hidden = true;
+  try {
+    const { data: missing, error } = await supabase.from('employees').select('id').is('employee_number', null);
+    if (error) throw error;
+
+    let assigned = 0;
+    for (const emp of missing || []) {
+      const { data: employeeNumber, error: numberError } = await supabase.rpc('next_employee_number');
+      if (numberError) throw numberError;
+      const { error: updateError } = await supabase.from('employees').update({ employee_number: employeeNumber }).eq('id', emp.id);
+      if (updateError) throw updateError;
+      assigned += 1;
+    }
+
+    assignMissingNumbersInfo.textContent = assigned
+      ? `Assigned ${assigned} employee number${assigned === 1 ? '' : 's'}.`
+      : 'No employees were missing a number.';
+    assignMissingNumbersInfo.hidden = false;
+    await loadEmployees();
+  } catch (err) {
+    assignMissingNumbersInfo.textContent = err.message || 'Could not assign missing numbers.';
+    assignMissingNumbersInfo.hidden = false;
+  } finally {
+    assignMissingNumbersBtn.disabled = false;
+  }
+});
 
 function renderEmployeeTable(employees) {
   employeesEmptyState.hidden = employees.length > 0;
@@ -377,8 +699,11 @@ function renderEmployeeTable(employees) {
 addEmployeeBtn.addEventListener('click', async () => {
   resetForm();
   renderCompensationFields();
-  await populateJobSelects();
+  compensationItemsCache = [];
+  Object.keys(COMP_HISTORY_SECTIONS).forEach(sectionKey => { resetCompHistoryForm(sectionKey); renderCompHistorySection(sectionKey); });
+  setCompHistoryFormsEnabled(false);
   showForm();
+  await populateJobSelects();
 });
 
 employeeFormBackBtn.addEventListener('click', showDirectory);
@@ -400,6 +725,9 @@ employeeTableBody.addEventListener('click', async event => {
   renderCompensationFields();
   await populateJobSelects(data);
   populateForm(data);
+  await loadCompensationItems(data.id);
+  Object.keys(COMP_HISTORY_SECTIONS).forEach(sectionKey => { resetCompHistoryForm(sectionKey); renderCompHistorySection(sectionKey); });
+  setCompHistoryFormsEnabled(true);
   showForm();
 });
 
@@ -520,6 +848,7 @@ function populateSettingsForm(s) {
   renderLookupList('sub_departments', s.sub_departments || []);
   settingsEmpNumPrefix.value = s.employee_number_prefix ?? 'EMP';
   settingsEmpNumPadding.value = s.employee_number_padding ?? 3;
+  settingsEmpNumSeparator.value = s.employee_number_separator ?? '';
   settingsEmpNumIncludeYear.checked = !!s.employee_number_include_year;
   settingsEmpNumIncludeMonth.checked = !!s.employee_number_include_month;
   updateEmployeeNumberPreview(s.employee_number_next ?? 1);
@@ -549,15 +878,17 @@ function updateWorkEndTimePreview() {
 function updateEmployeeNumberPreview(nextNumber = cachedSettings?.employee_number_next ?? 1) {
   const prefix = settingsEmpNumPrefix.value.trim();
   const padding = Math.max(toNumber(settingsEmpNumPadding.value) || 3, 1);
+  const separator = settingsEmpNumSeparator.value;
   const now = new Date();
-  let preview = prefix;
-  if (settingsEmpNumIncludeYear.checked) preview += String(now.getFullYear());
-  if (settingsEmpNumIncludeMonth.checked) preview += String(now.getMonth() + 1).padStart(2, '0');
-  preview += String(nextNumber).padStart(padding, '0');
-  settingsEmpNumPreview.textContent = preview;
+  const parts = [];
+  if (prefix) parts.push(prefix);
+  if (settingsEmpNumIncludeYear.checked) parts.push(String(now.getFullYear()));
+  if (settingsEmpNumIncludeMonth.checked) parts.push(String(now.getMonth() + 1).padStart(2, '0'));
+  parts.push(String(nextNumber).padStart(padding, '0'));
+  settingsEmpNumPreview.textContent = parts.join(separator);
 }
 
-[settingsEmpNumPrefix, settingsEmpNumPadding, settingsEmpNumIncludeYear, settingsEmpNumIncludeMonth].forEach(el => {
+[settingsEmpNumPrefix, settingsEmpNumPadding, settingsEmpNumSeparator, settingsEmpNumIncludeYear, settingsEmpNumIncludeMonth].forEach(el => {
   el.addEventListener('input', () => updateEmployeeNumberPreview());
 });
 
@@ -636,6 +967,7 @@ saveSettingsBtn.addEventListener('click', async () => {
     sub_departments: cachedSettings?.sub_departments || [],
     employee_number_prefix: settingsEmpNumPrefix.value.trim() || 'EMP',
     employee_number_padding: Math.max(toNumber(settingsEmpNumPadding.value) || 3, 1),
+    employee_number_separator: settingsEmpNumSeparator.value,
     employee_number_include_year: settingsEmpNumIncludeYear.checked,
     employee_number_include_month: settingsEmpNumIncludeMonth.checked,
     updated_at: new Date().toISOString()

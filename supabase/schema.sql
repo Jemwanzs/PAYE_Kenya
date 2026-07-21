@@ -70,6 +70,7 @@ create table public.payroll_settings (
   employee_number_include_year boolean not null default false,
   employee_number_include_month boolean not null default false,
   employee_number_next         integer not null default 1,
+  employee_number_separator    text not null default '',
   business_name            text not null default '',
   work_hours_per_day       numeric not null default 8,
   working_days             text[] not null default array['mon','tue','wed','thu','fri'],
@@ -122,6 +123,33 @@ create index employees_user_id_idx on public.employees(user_id);
 create index employees_status_idx on public.employees(status);
 create unique index employees_user_number_idx on public.employees(user_id, employee_number) where employee_number is not null;
 
+-- Dated compensation entries (see migrate_compensation_history.sql for
+-- the version-controlled description; kept in sync here for fresh
+-- installs).
+
+create table public.employee_compensation_items (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users(id) on delete cascade,
+  employee_id   uuid not null references public.employees(id) on delete cascade,
+  component_key text not null,
+  label         text not null,
+  amount        numeric not null default 0,
+  start_date    date not null,
+  end_date      date,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+alter table public.employee_compensation_items enable row level security;
+
+create policy "manage_own_employee_compensation_items"
+  on public.employee_compensation_items for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index employee_compensation_items_employee_idx on public.employee_compensation_items(employee_id);
+create index employee_compensation_items_key_idx on public.employee_compensation_items(employee_id, component_key);
+
 -- Atomically formats and reserves the next employee number for the
 -- calling user (see migrate_employee_numbering.sql for the
 -- version-controlled description; kept in sync here for fresh installs).
@@ -132,6 +160,7 @@ security definer set search_path = public
 as $$
 declare
   settings_row public.payroll_settings%rowtype;
+  parts text[] := '{}';
   formatted text;
 begin
   select * into settings_row
@@ -145,14 +174,18 @@ begin
     returning * into settings_row;
   end if;
 
-  formatted := coalesce(settings_row.employee_number_prefix, '');
+  if coalesce(settings_row.employee_number_prefix, '') <> '' then
+    parts := array_append(parts, settings_row.employee_number_prefix);
+  end if;
   if settings_row.employee_number_include_year then
-    formatted := formatted || to_char(now(), 'YYYY');
+    parts := array_append(parts, to_char(now(), 'YYYY'));
   end if;
   if settings_row.employee_number_include_month then
-    formatted := formatted || to_char(now(), 'MM');
+    parts := array_append(parts, to_char(now(), 'MM'));
   end if;
-  formatted := formatted || lpad(settings_row.employee_number_next::text, greatest(coalesce(settings_row.employee_number_padding, 3), 1), '0');
+  parts := array_append(parts, lpad(settings_row.employee_number_next::text, greatest(coalesce(settings_row.employee_number_padding, 3), 1), '0'));
+
+  formatted := array_to_string(parts, coalesce(settings_row.employee_number_separator, ''));
 
   update public.payroll_settings
   set employee_number_next = settings_row.employee_number_next + 1
