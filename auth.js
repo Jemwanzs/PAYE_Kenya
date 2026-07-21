@@ -51,6 +51,7 @@ const screens = {
   calculator: document.getElementById('calculatorGate'),
   employees: document.getElementById('employeesPage'),
   payroll: document.getElementById('payrollPage'),
+  leave: document.getElementById('leavePage'),
   settings: document.getElementById('settingsPage')
 };
 const accessBanner = document.getElementById('accessBanner');
@@ -176,6 +177,7 @@ function renderAccess(access) {
   calculatorGate.classList.toggle('blurred', !access.hasAccess);
   screens.employees.classList.toggle('blurred', !access.hasAccess);
   screens.payroll.classList.toggle('blurred', !access.hasAccess);
+  screens.leave.classList.toggle('blurred', !access.hasAccess);
   screens.settings.classList.toggle('blurred', !access.hasAccess);
   setPurchaseOverlay(!access.hasAccess, { forced: !access.hasAccess });
 }

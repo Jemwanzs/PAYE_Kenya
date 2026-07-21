@@ -264,6 +264,7 @@ function populateForm(employee) {
   document.getElementById('employeeLastName').value = employee.last_name || '';
   document.getElementById('employeeEmail').value = employee.email || '';
   document.getElementById('employeePhone').value = employee.phone || '';
+  document.getElementById('employeeGender').value = employee.gender || '';
   // Job position/department/sub-department are populated separately via
   // populateJobSelects(employee), which must run before this so the
   // relevant <option> exists (including a fallback if it was since
@@ -318,6 +319,7 @@ function collectFormData() {
     last_name: document.getElementById('employeeLastName').value.trim(),
     email: document.getElementById('employeeEmail').value.trim() || null,
     phone: document.getElementById('employeePhone').value.trim() || null,
+    gender: document.getElementById('employeeGender').value || null,
     job_position: document.getElementById('employeeJobPosition').value.trim() || null,
     department: document.getElementById('employeeDepartment').value.trim() || null,
     sub_department: document.getElementById('employeeSubDepartment').value.trim() || null,

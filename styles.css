@@ -1382,3 +1382,94 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
 }
 .muster-prepared { white-space: nowrap; }
 .muster-page-number { font-weight: 700; white-space: nowrap; }
+
+/* Leave module ---------------------------------------------------- */
+
+.leave-subview { margin-top: 16px; }
+
+.eligibility-section { margin-top: 14px; }
+.eligibility-section:first-of-type { margin-top: 4px; }
+
+.checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 8px;
+  font-size: .86rem;
+}
+.checkbox-grid label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.checkbox-grid input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--brand); }
+
+.eligibility-checklist {
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fffaf3;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.leave-analytics-breakdown { margin-top: 14px; }
+
+.leave-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.leave-calendar-headcell {
+  text-align: center;
+  font-size: .74rem;
+  font-weight: 800;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding-bottom: 4px;
+}
+
+.leave-calendar-cell {
+  min-height: 84px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px 8px;
+  background: #fffaf3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+.leave-calendar-cell.is-empty { border: 0; background: transparent; }
+.leave-calendar-cell.is-weekend { background: rgba(77, 43, 21, .05); }
+.leave-calendar-cell.is-holiday { background: rgba(179, 38, 30, .08); border-color: rgba(179, 38, 30, .3); }
+.leave-calendar-cell.is-today { border-color: var(--brand); border-width: 2px; }
+
+.leave-calendar-date { font-weight: 800; font-size: .82rem; }
+.leave-calendar-holiday {
+  font-size: .68rem;
+  font-weight: 700;
+  color: #b3261e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leave-calendar-onleave {
+  font-size: .68rem;
+  color: var(--brand-dark);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Leave balances printing: same trick as the muster roll, scoped to
+   #leaveBalancePrintWrap; it reuses the .muster-* print styles above. */
+body.printing-leave-balances .app-shell > *:not(#leaveBalancePrintWrap) { display: none !important; }
+body.printing-leave-balances #leaveBalancePrintWrap { display: block; }
+
+@media (max-width: 620px) {
+  .leave-calendar-grid { gap: 4px; }
+  .leave-calendar-cell { min-height: 60px; padding: 4px 5px; }
+  .leave-calendar-headcell { font-size: .6rem; }
+}

@@ -131,6 +131,10 @@
         <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20M7 15h4"/></svg>
         Payroll
       </button>
+      <button type="button" class="app-nav-btn" data-page="leave" aria-selected="false">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M8 14l2 2 4-4"/></svg>
+        Leave
+      </button>
       <button type="button" class="app-nav-btn" data-page="settings" aria-selected="false">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings
@@ -438,6 +442,14 @@
             <label><span>Last name <span class="required-asterisk">*</span></span><input type="text" id="employeeLastName" required /></label>
             <label>Email <input type="email" id="employeeEmail" /></label>
             <label>Phone <input type="text" id="employeePhone" /></label>
+            <label>Gender
+              <select id="employeeGender">
+                <option value="">— Not specified —</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
             <div class="classification-dropdown lookup-dropdown" id="employeeJobPositionDropdown">
               <span class="field-label">Job position</span>
               <button type="button" class="classification-trigger" id="employeeJobPositionTrigger" aria-expanded="false">
@@ -666,6 +678,275 @@
       </div>
     </section>
 
+    <section class="employees-page" id="leavePage" hidden>
+      <div class="panel-header">
+        <h2>Leave</h2>
+      </div>
+
+      <div class="tab-bar" role="tablist" aria-label="Leave sections">
+        <button type="button" class="tab-btn leave-tab-btn" data-leave-tab="applications" aria-selected="true">Applications</button>
+        <button type="button" class="tab-btn leave-tab-btn" data-leave-tab="types" aria-selected="false">Leave Types</button>
+        <button type="button" class="tab-btn leave-tab-btn" data-leave-tab="calendar" aria-selected="false">Calendar</button>
+        <button type="button" class="tab-btn leave-tab-btn" data-leave-tab="holidays" aria-selected="false">Public Holidays</button>
+        <button type="button" class="tab-btn leave-tab-btn" data-leave-tab="balances" aria-selected="false">Leave Balances</button>
+      </div>
+
+      <!-- Applications -->
+      <div class="employees-directory leave-subview" id="leaveApplicationsView">
+        <div class="panel-header">
+          <h3>Applications</h3>
+          <button type="button" class="primary-button" id="applyLeaveBtn">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Apply for leave
+          </button>
+        </div>
+        <p class="auth-error" id="leaveApplicationsError" hidden></p>
+
+        <details class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg><span>Analytics</span></summary>
+          <div class="field-grid two-col">
+            <label>Department <select id="leaveAnalyticsDept"><option value="">All departments</option></select></label>
+            <label>Sub department <select id="leaveAnalyticsSubDept"><option value="">All sub departments</option></select></label>
+            <label>From <input type="date" id="leaveAnalyticsFrom" /></label>
+            <label>To <input type="date" id="leaveAnalyticsTo" /></label>
+          </div>
+          <div class="summary-cards" id="leaveAnalyticsSummary"></div>
+          <div class="leave-analytics-breakdown" id="leaveAnalyticsBreakdown"></div>
+        </details>
+
+        <div class="employee-status-filter tab-bar" role="tablist" aria-label="Application status filter">
+          <button type="button" class="tab-btn" data-app-status-filter="all" aria-selected="true">All</button>
+          <button type="button" class="tab-btn" data-app-status-filter="pending" aria-selected="false">Pending</button>
+          <button type="button" class="tab-btn" data-app-status-filter="approved" aria-selected="false">Approved</button>
+          <button type="button" class="tab-btn" data-app-status-filter="completed" aria-selected="false">Completed</button>
+          <button type="button" class="tab-btn" data-app-status-filter="rejected" aria-selected="false">Rejected</button>
+        </div>
+
+        <div class="lookup-add-row">
+          <input type="text" id="leaveApplicationsSearch" placeholder="Search by employee name" />
+        </div>
+
+        <p class="hint" id="leaveApplicationsEmptyState" hidden>No leave applications yet.</p>
+
+        <div class="employee-table-wrap">
+          <table class="employee-table" id="leaveApplicationsTable">
+            <thead>
+              <tr><th>Employee</th><th>Leave type</th><th>Start</th><th>End</th><th>Days</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody id="leaveApplicationsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Apply for leave -->
+      <form class="employees-form leave-subview" id="leaveApplyView" hidden>
+        <div class="panel-header">
+          <h3 id="leaveApplyTitle">Apply for leave</h3>
+          <button type="button" class="ghost-button" id="leaveApplyBackBtn">
+            <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Back to applications
+          </button>
+        </div>
+        <p class="auth-error" id="leaveApplyError" hidden></p>
+        <div class="field-grid two-col">
+          <label><span>Employee <span class="required-asterisk">*</span></span>
+            <select id="leaveApplyEmployee" required><option value="">— Select —</option></select>
+          </label>
+          <label><span>Leave type <span class="required-asterisk">*</span></span>
+            <select id="leaveApplyType" required><option value="">— Select employee first —</option></select>
+          </label>
+          <label><span>Start date <span class="required-asterisk">*</span></span><input type="date" id="leaveApplyStart" required /></label>
+          <label><span>End date <span class="required-asterisk">*</span></span><input type="date" id="leaveApplyEnd" required /></label>
+        </div>
+        <div class="field-grid two-col" id="leaveApplyPartialRow" hidden>
+          <label><input type="checkbox" id="leaveApplyIsPartial" /> Partial day (a few hours instead of a full day)</label>
+          <label>Hours requested <input type="number" id="leaveApplyHours" min="0" step="0.5" /></label>
+        </div>
+        <label>Reason <textarea id="leaveApplyReason" rows="2"></textarea></label>
+        <label id="leaveApplyDocRow" hidden>Documentation reference / details <span class="required-asterisk">*</span>
+          <textarea id="leaveApplyDoc" rows="2" placeholder="e.g. medical certificate ref, or how it was provided"></textarea>
+        </label>
+        <p class="hint" id="leaveApplyBalanceHint"></p>
+        <div class="employee-form-actions">
+          <button type="submit" class="primary-button" id="leaveApplySaveBtn">Submit application</button>
+        </div>
+      </form>
+
+      <!-- Leave Types -->
+      <div class="employees-directory leave-subview" id="leaveTypesView" hidden>
+        <div class="panel-header">
+          <h3>Leave types</h3>
+          <button type="button" class="primary-button" id="addLeaveTypeBtn">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Add leave type
+          </button>
+        </div>
+        <p class="hint" id="leaveTypesEmptyState" hidden>No leave types configured yet.</p>
+        <div class="employee-table-wrap">
+          <table class="employee-table" id="leaveTypesTable">
+            <thead>
+              <tr><th>Name</th><th>Annual days</th><th>Accrual</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody id="leaveTypesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <form class="employees-form leave-subview" id="leaveTypeFormView" hidden>
+        <div class="panel-header">
+          <h3 id="leaveTypeFormTitle">Add leave type</h3>
+          <button type="button" class="ghost-button" id="leaveTypeFormBackBtn">
+            <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Back to leave types
+          </button>
+        </div>
+        <p class="auth-error" id="leaveTypeFormError" hidden></p>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg><span>Basics</span></summary>
+          <div class="field-grid two-col">
+            <label><span>Name <span class="required-asterisk">*</span></span><input type="text" id="leaveTypeName" required placeholder="e.g. Annual Leave" /></label>
+            <label>Annual entitlement (days) <input type="number" id="leaveTypeAnnualDays" min="0" step="0.5" /></label>
+            <label>Accrual basis
+              <select id="leaveTypeAccrualMethod">
+                <option value="immediate">Full entitlement available immediately each leave year</option>
+                <option value="monthly">Accrue proportionally, month by month</option>
+              </select>
+            </label>
+            <label>Effective start date <input type="date" id="leaveTypeEffectiveDate" /></label>
+            <label>Minimum notice period (days) <input type="number" id="leaveTypeNoticeDays" min="0" step="1" /></label>
+            <label>Max carry forward (days) <input type="number" id="leaveTypeMaxCarryForward" min="0" step="0.5" /></label>
+          </div>
+          <div class="field-grid two-col">
+            <label><input type="checkbox" id="leaveTypeAllowNegative" /> Allow negative balances</label>
+            <label><input type="checkbox" id="leaveTypeAllowPartial" /> Allow applying for a few hours in a day</label>
+            <label><input type="checkbox" id="leaveTypeRequiresDoc" /> Requires supporting documentation</label>
+            <label><input type="checkbox" id="leaveTypeIsActive" checked /> Active (available to apply for)</label>
+          </div>
+        </details>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>Eligibility</span></summary>
+          <p class="hint">Leave every box in a category unchecked to allow all. A specifically-checked employee is always eligible regardless of the other filters.</p>
+          <div class="eligibility-section">
+            <span class="field-label">Gender</span>
+            <div class="checkbox-grid" id="leaveTypeEligGender">
+              <label><input type="checkbox" value="male" /> Male</label>
+              <label><input type="checkbox" value="female" /> Female</label>
+              <label><input type="checkbox" value="other" /> Other</label>
+            </div>
+          </div>
+          <div class="eligibility-section">
+            <span class="field-label">Employee type</span>
+            <div class="checkbox-grid" id="leaveTypeEligEmployeeType">
+              <label><input type="checkbox" value="primary" /> Primary</label>
+              <label><input type="checkbox" value="secondary" /> Secondary</label>
+              <label><input type="checkbox" value="contractor" /> Contractor</label>
+              <label><input type="checkbox" value="pwd" /> PWD</label>
+            </div>
+          </div>
+          <div class="eligibility-section">
+            <span class="field-label">Department</span>
+            <div class="checkbox-grid eligibility-checklist" id="leaveTypeEligDepartment"></div>
+          </div>
+          <div class="eligibility-section">
+            <span class="field-label">Job position</span>
+            <div class="checkbox-grid eligibility-checklist" id="leaveTypeEligJobPosition"></div>
+          </div>
+          <div class="eligibility-section">
+            <span class="field-label">Specific employees (always eligible)</span>
+            <div class="checkbox-grid eligibility-checklist" id="leaveTypeEligEmployee"></div>
+          </div>
+        </details>
+
+        <div class="employee-form-actions">
+          <button type="submit" class="primary-button" id="leaveTypeSaveBtn">Save leave type</button>
+        </div>
+      </form>
+
+      <!-- Calendar -->
+      <div class="employees-directory leave-subview" id="leaveCalendarView" hidden>
+        <div class="panel-header">
+          <h3 id="leaveCalendarTitle">Calendar</h3>
+          <div class="hero-actions">
+            <button type="button" class="ghost-button" id="leaveCalendarPrevBtn" aria-label="Previous month">&larr;</button>
+            <button type="button" class="ghost-button" id="leaveCalendarTodayBtn">Today</button>
+            <button type="button" class="ghost-button" id="leaveCalendarNextBtn" aria-label="Next month">&rarr;</button>
+          </div>
+        </div>
+        <div class="leave-calendar-grid" id="leaveCalendarGrid"></div>
+      </div>
+
+      <!-- Public Holidays -->
+      <div class="employees-directory leave-subview" id="leaveHolidaysView" hidden>
+        <div class="panel-header">
+          <h3>Public holidays</h3>
+        </div>
+        <p class="auth-error" id="leaveHolidaysError" hidden></p>
+        <div class="field-grid two-col">
+          <label>Date <input type="date" id="leaveHolidayDate" /></label>
+          <label>Name <input type="text" id="leaveHolidayName" placeholder="e.g. Jamhuri Day" /></label>
+        </div>
+        <div class="employee-form-actions">
+          <button type="button" class="primary-button" id="addHolidayBtn">Add holiday</button>
+        </div>
+        <div class="field-grid two-col" style="margin-top:14px">
+          <label>Seed common Kenyan holidays for year <input type="number" id="leaveHolidaySeedYear" step="1" /></label>
+          <label>&nbsp;<button type="button" class="ghost-button" id="seedHolidaysBtn" style="display:block;margin-top:6px">Seed holidays</button></label>
+        </div>
+        <p class="hint" id="leaveHolidaysEmptyState" hidden>No public holidays added yet.</p>
+        <div class="employee-table-wrap">
+          <table class="employee-table" id="leaveHolidaysTable">
+            <thead><tr><th>Date</th><th>Name</th><th></th></tr></thead>
+            <tbody id="leaveHolidaysTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Leave Balances -->
+      <div class="employees-directory leave-subview" id="leaveBalancesView" hidden>
+        <div class="panel-header">
+          <h3>Leave balances</h3>
+          <button type="button" class="ghost-button" id="printLeaveBalancesBtn">
+            <svg viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+            Print report
+          </button>
+        </div>
+        <div class="field-grid two-col">
+          <label>Department <select id="leaveBalancesDept"><option value="">All departments</option></select></label>
+          <label>Sub department <select id="leaveBalancesSubDept"><option value="">All sub departments</option></select></label>
+          <label>As of date <input type="date" id="leaveBalancesAsOf" /></label>
+          <label>Search <input type="text" id="leaveBalancesSearch" placeholder="Search by employee name" /></label>
+        </div>
+        <div class="employee-table-wrap">
+          <table class="employee-table" id="leaveBalancesTable">
+            <thead><tr id="leaveBalancesTableHead"></tr></thead>
+            <tbody id="leaveBalancesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <div class="purchase-overlay" id="leaveDecisionOverlay" hidden>
+      <div class="purchase-modal" style="max-width:420px">
+        <button type="button" class="modal-close" id="leaveDecisionCloseBtn" aria-label="Close">&times;</button>
+        <p class="eyebrow"><span class="eyebrow-dot"></span><span id="leaveDecisionEyebrow">Decision</span></p>
+        <h2 id="leaveDecisionTitle">Approve leave application</h2>
+        <form id="leaveDecisionForm">
+          <div class="field-grid">
+            <label><span>Comment <span class="required-asterisk">*</span></span><textarea id="leaveDecisionComment" rows="3" required></textarea></label>
+          </div>
+          <p class="auth-error" id="leaveDecisionError" hidden></p>
+          <div class="auth-actions" style="margin-top:14px">
+            <button type="submit" class="primary-button" id="leaveDecisionConfirmBtn">Confirm</button>
+            <button type="button" class="ghost-button" id="leaveDecisionCancelBtn">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="leaveBalancePrintWrap" hidden></div>
+
     <div id="musterRollPrintWrap" hidden></div>
 
     <div id="payslipPrintWrap" hidden>
@@ -822,5 +1103,6 @@
   <script type="module" src="auth.js"></script>
   <script type="module" src="employees.js"></script>
   <script type="module" src="payroll.js"></script>
+  <script type="module" src="leave.js"></script>
 </body>
 </html>
