@@ -1549,6 +1549,13 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
   white-space: nowrap;
 }
 
+#leaveBalancesTable th,
+#leaveBalancesTable td { padding: 8px 10px; font-size: .78rem; }
+#leaveBalancesTable .leave-num-cell,
+#leaveBalancesTable .leave-num-head { text-align: right; white-space: nowrap; }
+#leaveBalancesTable thead tr:first-child th { text-align: center; }
+.leave-balance-subcell { color: var(--muted); }
+
 .leave-balance-cell {
   width: 100%;
   border: 1px solid transparent;
@@ -1558,7 +1565,7 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
   font: inherit;
   font-weight: 700;
   color: var(--text);
-  text-align: left;
+  text-align: right;
   cursor: pointer;
   transition: background-color .15s ease, border-color .15s ease;
 }

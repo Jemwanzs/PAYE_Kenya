@@ -53,6 +53,12 @@ const settingsEmpNumIncludeYear = document.getElementById('settingsEmpNumInclude
 const settingsEmpNumIncludeMonth = document.getElementById('settingsEmpNumIncludeMonth');
 const settingsEmpNumPreview = document.getElementById('settingsEmpNumPreview');
 
+const settingsWorkingDays = document.getElementById('settingsWorkingDays');
+const settingsWorkStartTime = document.getElementById('settingsWorkStartTime');
+const settingsWorkHoursPerDay = document.getElementById('settingsWorkHoursPerDay');
+const settingsBreakMinutes = document.getElementById('settingsBreakMinutes');
+const settingsWorkEndTimeDisplay = document.getElementById('settingsWorkEndTimeDisplay');
+
 const LOOKUP_LIST_ELS = { job_positions: 'jobPositionsList', departments: 'departmentsList', sub_departments: 'subDepartmentsList' };
 const LOOKUP_INPUT_ELS = { job_positions: 'jobPositionInput', departments: 'departmentInput', sub_departments: 'subDepartmentInput' };
 
@@ -74,7 +80,11 @@ function defaultSettings() {
     employee_number_prefix: 'EMP', employee_number_padding: 3,
     employee_number_include_year: false, employee_number_include_month: false,
     employee_number_next: 1,
-    business_name: ''
+    business_name: '',
+    working_days: ['mon', 'tue', 'wed', 'thu', 'fri'],
+    work_start_time: '08:00',
+    work_hours_per_day: 8,
+    break_minutes: 60
   };
 }
 
@@ -513,7 +523,28 @@ function populateSettingsForm(s) {
   settingsEmpNumIncludeYear.checked = !!s.employee_number_include_year;
   settingsEmpNumIncludeMonth.checked = !!s.employee_number_include_month;
   updateEmployeeNumberPreview(s.employee_number_next ?? 1);
+
+  const workingDays = s.working_days || ['mon', 'tue', 'wed', 'thu', 'fri'];
+  [...settingsWorkingDays.querySelectorAll('input')].forEach(cb => { cb.checked = workingDays.includes(cb.value); });
+  settingsWorkStartTime.value = s.work_start_time ? s.work_start_time.slice(0, 5) : '08:00';
+  settingsWorkHoursPerDay.value = s.work_hours_per_day ?? 8;
+  settingsBreakMinutes.value = s.break_minutes ?? 60;
+  updateWorkEndTimePreview();
 }
+
+function updateWorkEndTimePreview() {
+  const [sh, sm] = (settingsWorkStartTime.value || '08:00').split(':').map(Number);
+  const hours = toNumber(settingsWorkHoursPerDay.value) || 0;
+  const breakMinutes = toNumber(settingsBreakMinutes.value) || 0;
+  const totalMinutes = sh * 60 + sm + hours * 60 + breakMinutes;
+  const endH = Math.floor((totalMinutes / 60) % 24);
+  const endM = Math.round(totalMinutes % 60);
+  settingsWorkEndTimeDisplay.value = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+}
+
+[settingsWorkStartTime, settingsWorkHoursPerDay, settingsBreakMinutes].forEach(el => {
+  el.addEventListener('input', updateWorkEndTimePreview);
+});
 
 function updateEmployeeNumberPreview(nextNumber = cachedSettings?.employee_number_next ?? 1) {
   const prefix = settingsEmpNumPrefix.value.trim();
@@ -579,6 +610,10 @@ saveSettingsBtn.addEventListener('click', async () => {
 
   const payload = {
     business_name: document.getElementById('settingsBusinessName').value.trim(),
+    working_days: [...settingsWorkingDays.querySelectorAll('input:checked')].map(cb => cb.value),
+    work_start_time: settingsWorkStartTime.value || '08:00',
+    work_hours_per_day: toNumber(settingsWorkHoursPerDay.value) || 8,
+    break_minutes: Math.round(toNumber(settingsBreakMinutes.value)) || 0,
     nssf_rate: toNumber(document.getElementById('settingsNssfRate').value),
     nssf_upper_limit: toNumber(document.getElementById('settingsNssfUpperLimit').value),
     shif_rate: toNumber(document.getElementById('settingsShifRate').value),

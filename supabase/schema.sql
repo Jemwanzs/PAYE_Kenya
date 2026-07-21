@@ -72,6 +72,9 @@ create table public.payroll_settings (
   employee_number_next         integer not null default 1,
   business_name            text not null default '',
   work_hours_per_day       numeric not null default 8,
+  working_days             text[] not null default array['mon','tue','wed','thu','fri'],
+  work_start_time          time not null default '08:00',
+  break_minutes            integer not null default 60,
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now()
 );

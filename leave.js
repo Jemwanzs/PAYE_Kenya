@@ -157,9 +157,15 @@ function todayStr() {
   return toDateStr(new Date());
 }
 
+const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']; // Date#getDay() index
+
+// "Weekend" = "not a configured working day" — driven by Settings >
+// Working Schedule instead of hardcoded Saturday/Sunday, so a business
+// with a different working week (e.g. Sun-Thu) gets correct results.
 function isWeekend(dateStr) {
   const day = new Date(`${dateStr}T00:00:00`).getDay();
-  return day === 0 || day === 6;
+  const workingDays = settingsCache?.working_days || ['mon', 'tue', 'wed', 'thu', 'fri'];
+  return !workingDays.includes(WEEKDAY_KEYS[day]);
 }
 
 function isHoliday(dateStr) {
@@ -276,7 +282,10 @@ function adjustmentDaysForYear(employeeId, leaveTypeId, yearStart, yearEnd, asOf
 // depth caps carry-forward recursion at 10 leave years back — plenty for
 // any realistic tenure, and entitlement/used both fall to 0 once the
 // recursion runs past when the employee or leave type actually existed.
-function computeLeaveBalance(employee, leaveType, asOfStr, depth = 0) {
+// carryIn folds in manual adjustments too (an opening-balance grant is,
+// functionally, unused entitlement brought into the year) so the table
+// stays a simple entitled + carriedForward - taken = balance.
+function computeLeaveBalanceBreakdown(employee, leaveType, asOfStr, depth = 0) {
   const { start: yearStart, end: yearEnd, year } = leaveYearBounds(asOfStr);
   const entitlement = entitlementForYear(employee, leaveType, yearStart, yearEnd, asOfStr);
   const used = usedDaysForYear(employee.id, leaveType.id, yearStart, yearEnd, asOfStr);
@@ -284,10 +293,16 @@ function computeLeaveBalance(employee, leaveType, asOfStr, depth = 0) {
 
   let carryIn = 0;
   if (depth < 10) {
-    const prevBalance = computeLeaveBalance(employee, leaveType, `${year - 1}-12-31`, depth + 1);
-    carryIn = Math.max(0, Math.min(prevBalance, toNumber(leaveType.max_carry_forward)));
+    const prev = computeLeaveBalanceBreakdown(employee, leaveType, `${year - 1}-12-31`, depth + 1);
+    carryIn = Math.max(0, Math.min(prev.balance, toNumber(leaveType.max_carry_forward)));
   }
-  return entitlement + carryIn + adjusted - used;
+  carryIn += adjusted;
+  const balance = entitlement + carryIn - used;
+  return { entitlement, carryIn, used, balance };
+}
+
+function computeLeaveBalance(employee, leaveType, asOfStr) {
+  return computeLeaveBalanceBreakdown(employee, leaveType, asOfStr).balance;
 }
 
 // ---------------------------------------------------------------------
@@ -1170,12 +1185,23 @@ function filteredBalanceEmployees() {
     .filter(e => !search || employeeName(e).toLowerCase().includes(search));
 }
 
+// Each leave type gets 4 sub-columns so the table reads like a ledger
+// (Entitled + Carried Fwd - Taken = Balance) instead of just the final
+// number, on both the live table and the print report below.
+function leaveBalanceHeaderRows() {
+  const leading = ['Employee', 'Job position', 'Department'].map(l => `<th rowspan="2">${l}</th>`).join('');
+  const groups = leaveTypesCache.map(t => `<th colspan="4">${t.name}</th>`).join('');
+  const subLabels = ['Entitled', 'Carried Fwd', 'Taken', 'Balance'].map(l => `<th class="leave-num-head">${l}</th>`).join('');
+  const subs = leaveTypesCache.map(() => subLabels).join('');
+  return `<tr>${leading}${groups}</tr><tr>${subs}</tr>`;
+}
+
 function renderBalancesTable() {
   if (!leaveBalancesAsOf.value) leaveBalancesAsOf.value = todayStr();
   const asOf = leaveBalancesAsOf.value;
   const employees = filteredBalanceEmployees();
 
-  leaveBalancesTableHead.innerHTML = `<th>Employee</th><th>Job position</th><th>Department</th>${leaveTypesCache.map(t => `<th>${t.name}</th>`).join('')}`;
+  leaveBalancesTableHead.innerHTML = leaveBalanceHeaderRows();
 
   leaveBalancesTableBody.innerHTML = employees.map(emp => `
     <tr>
@@ -1183,15 +1209,21 @@ function renderBalancesTable() {
       <td>${emp.job_position || '—'}</td>
       <td>${emp.department || '—'}</td>
       ${leaveTypesCache.map(t => {
+        const b = computeLeaveBalanceBreakdown(emp, t, asOf);
         const hasAdjustments = adjustmentsCache.some(a => a.employee_id === emp.id && a.leave_type_id === t.id);
-        return `<td>
-          <button type="button" class="leave-balance-cell${hasAdjustments ? ' has-adjustments' : ''}" data-employee-id="${emp.id}" data-leave-type-id="${t.id}" title="Click to adjust this balance">
-            ${computeLeaveBalance(emp, t, asOf).toFixed(2)}
-          </button>
-        </td>`;
+        return `
+          <td class="leave-num-cell leave-balance-subcell">${b.entitlement.toFixed(2)}</td>
+          <td class="leave-num-cell leave-balance-subcell">${b.carryIn.toFixed(2)}</td>
+          <td class="leave-num-cell leave-balance-subcell">${b.used.toFixed(2)}</td>
+          <td class="leave-num-cell">
+            <button type="button" class="leave-balance-cell${hasAdjustments ? ' has-adjustments' : ''}" data-employee-id="${emp.id}" data-leave-type-id="${t.id}" title="Click to adjust this balance">
+              ${b.balance.toFixed(2)}
+            </button>
+          </td>
+        `;
       }).join('')}
     </tr>
-  `).join('') || `<tr><td colspan="${3 + leaveTypesCache.length}">No employees match this filter.</td></tr>`;
+  `).join('') || `<tr><td colspan="${3 + leaveTypesCache.length * 4}">No employees match this filter.</td></tr>`;
 }
 
 [leaveBalancesDept, leaveBalancesSubDept, leaveBalancesAsOf].forEach(el => el.addEventListener('change', renderBalancesTable));
@@ -1210,13 +1242,40 @@ function buildLeaveBalancesPrintHtml() {
   const deptLabel = leaveBalancesDept.value || 'All departments';
   const subDeptLabel = leaveBalancesSubDept.value || 'All sub departments';
 
-  const headerCells = ['Employee', 'Job Position', 'Department', ...leaveTypesCache.map(t => t.name)];
-  const rows = employees.map(emp => [
-    employeeName(emp), emp.job_position || '—', emp.department || '—',
-    ...leaveTypesCache.map(t => computeLeaveBalance(emp, t, asOf).toFixed(2))
-  ]);
-  const totalsRow = ['GRAND TOTAL', '', '', ...leaveTypesCache.map((t, idx) =>
-    rows.reduce((sum, r) => sum + (parseFloat(r[3 + idx]) || 0), 0).toFixed(2))];
+  const rows = employees.map(emp => ({
+    leading: [employeeName(emp), emp.job_position || '—', emp.department || '—'],
+    breakdowns: leaveTypesCache.map(t => computeLeaveBalanceBreakdown(emp, t, asOf))
+  }));
+
+  const totalsPerType = leaveTypesCache.map((t, idx) => rows.reduce((acc, r) => {
+    const b = r.breakdowns[idx];
+    acc.entitlement += b.entitlement; acc.carryIn += b.carryIn; acc.used += b.used; acc.balance += b.balance;
+    return acc;
+  }, { entitlement: 0, carryIn: 0, used: 0, balance: 0 }));
+
+  const bodyRows = rows.map(r => `
+    <tr>
+      ${r.leading.map(c => `<td class="muster-left">${c}</td>`).join('')}
+      ${r.breakdowns.map(b => `
+        <td class="muster-right">${b.entitlement.toFixed(2)}</td>
+        <td class="muster-right">${b.carryIn.toFixed(2)}</td>
+        <td class="muster-right">${b.used.toFixed(2)}</td>
+        <td class="muster-right muster-bold">${b.balance.toFixed(2)}</td>
+      `).join('')}
+    </tr>
+  `).join('');
+
+  const totalsRowHtml = `
+    <tr class="muster-totals-row">
+      <td class="muster-left muster-bold">GRAND TOTAL</td><td></td><td></td>
+      ${totalsPerType.map(t => `
+        <td class="muster-right muster-bold">${t.entitlement.toFixed(2)}</td>
+        <td class="muster-right muster-bold">${t.carryIn.toFixed(2)}</td>
+        <td class="muster-right muster-bold">${t.used.toFixed(2)}</td>
+        <td class="muster-right muster-bold">${t.balance.toFixed(2)}</td>
+      `).join('')}
+    </tr>
+  `;
 
   return `
     <div class="muster-page">
@@ -1226,11 +1285,8 @@ function buildLeaveBalancesPrintHtml() {
         <div class="muster-meta">As of ${asOf} &middot; Generated: ${new Date().toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
       </div>
       <table class="muster-table">
-        <thead><tr>${headerCells.map(c => `<th>${c}</th>`).join('')}</tr></thead>
-        <tbody>
-          ${rows.map(r => `<tr>${r.map((c, idx) => `<td class="${idx < 3 ? 'muster-left' : 'muster-right'}">${c}</td>`).join('')}</tr>`).join('')}
-          <tr class="muster-totals-row">${totalsRow.map((c, idx) => `<td class="${idx < 3 ? 'muster-left muster-bold' : 'muster-right muster-bold'}">${c}</td>`).join('')}</tr>
-        </tbody>
+        <thead>${leaveBalanceHeaderRows()}</thead>
+        <tbody>${bodyRows}${totalsRowHtml}</tbody>
       </table>
       <div class="muster-footer">
         <div class="muster-prepared">Prepared by &mdash; ________________________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: __________________</div>

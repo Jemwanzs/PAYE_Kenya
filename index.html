@@ -937,7 +937,7 @@
         </div>
         <div class="employee-table-wrap">
           <table class="employee-table" id="leaveBalancesTable">
-            <thead><tr id="leaveBalancesTableHead"></tr></thead>
+            <thead id="leaveBalancesTableHead"></thead>
             <tbody id="leaveBalancesTableBody"></tbody>
           </table>
         </div>
@@ -1038,6 +1038,27 @@
             <label>Business name <input type="text" id="settingsBusinessName" placeholder="e.g. Acme Kenya Ltd" /></label>
           </div>
           <p class="hint">Shown on the payroll muster roll and other printed company documents.</p>
+        </details>
+
+        <details open class="input-group">
+          <summary><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Working Schedule</span></summary>
+          <p class="hint">Used to detect weekends on the Leave calendar and to convert partial-day leave hours into a fraction of a day.</p>
+          <span class="field-label">Working days</span>
+          <div class="checkbox-grid" id="settingsWorkingDays">
+            <label><input type="checkbox" value="mon" /> Monday</label>
+            <label><input type="checkbox" value="tue" /> Tuesday</label>
+            <label><input type="checkbox" value="wed" /> Wednesday</label>
+            <label><input type="checkbox" value="thu" /> Thursday</label>
+            <label><input type="checkbox" value="fri" /> Friday</label>
+            <label><input type="checkbox" value="sat" /> Saturday</label>
+            <label><input type="checkbox" value="sun" /> Sunday</label>
+          </div>
+          <div class="field-grid two-col">
+            <label>Start time <input type="time" id="settingsWorkStartTime" /></label>
+            <label>Hours per day (excluding break) <input type="number" id="settingsWorkHoursPerDay" min="0" step="0.5" /></label>
+            <label>Break <input type="number" id="settingsBreakMinutes" min="0" step="5" /> minutes</label>
+            <label>End time <input type="text" id="settingsWorkEndTimeDisplay" disabled /></label>
+          </div>
         </details>
 
         <details open class="input-group">
