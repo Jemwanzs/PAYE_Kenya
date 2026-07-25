@@ -1060,6 +1060,20 @@
       </div>
     </div>
 
+    <div class="purchase-overlay" id="leaveConfirmOverlay" hidden>
+      <div class="purchase-modal" style="max-width:420px">
+        <button type="button" class="modal-close" id="leaveConfirmCloseBtn" aria-label="Close">&times;</button>
+        <p class="eyebrow"><span class="eyebrow-dot"></span>Confirm</p>
+        <h2 id="leaveConfirmTitle">Delete this entry?</h2>
+        <p class="hero-copy" id="leaveConfirmMessage"></p>
+        <p class="auth-error" id="leaveConfirmError" hidden></p>
+        <div class="auth-actions" style="margin-top:14px">
+          <button type="button" class="primary-button" id="leaveConfirmActionBtn">Delete</button>
+          <button type="button" class="ghost-button" id="leaveConfirmCancelBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <div id="leaveBalancePrintWrap" hidden></div>
 
     <div id="musterRollPrintWrap" hidden></div>

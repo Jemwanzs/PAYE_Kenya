@@ -120,6 +120,14 @@ const leaveAdjustReason = document.getElementById('leaveAdjustReason');
 const leaveAdjustError = document.getElementById('leaveAdjustError');
 const leaveAdjustSaveBtn = document.getElementById('leaveAdjustSaveBtn');
 
+const leaveConfirmOverlay = document.getElementById('leaveConfirmOverlay');
+const leaveConfirmCloseBtn = document.getElementById('leaveConfirmCloseBtn');
+const leaveConfirmCancelBtn = document.getElementById('leaveConfirmCancelBtn');
+const leaveConfirmTitle = document.getElementById('leaveConfirmTitle');
+const leaveConfirmMessage = document.getElementById('leaveConfirmMessage');
+const leaveConfirmError = document.getElementById('leaveConfirmError');
+const leaveConfirmActionBtn = document.getElementById('leaveConfirmActionBtn');
+
 // ---------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------
@@ -138,6 +146,44 @@ let calendarMonth = new Date().getMonth();
 let calendarYear = new Date().getFullYear();
 let pendingDecision = null; // { applicationId, action: 'approved' | 'rejected' }
 let currentAdjustmentTarget = null; // { employeeId, leaveTypeId }
+
+// ---------------------------------------------------------------------
+// Shared confirm modal (used before destructive actions like deletes)
+// ---------------------------------------------------------------------
+
+let leaveConfirmHandler = null;
+
+function openLeaveConfirm({ title, message, confirmLabel = 'Delete', onConfirm }) {
+  leaveConfirmTitle.textContent = title;
+  leaveConfirmMessage.textContent = message;
+  leaveConfirmActionBtn.textContent = confirmLabel;
+  leaveConfirmActionBtn.disabled = false;
+  leaveConfirmError.hidden = true;
+  leaveConfirmHandler = onConfirm;
+  leaveConfirmOverlay.hidden = false;
+}
+
+function closeLeaveConfirm() {
+  leaveConfirmOverlay.hidden = true;
+  leaveConfirmHandler = null;
+}
+
+leaveConfirmCloseBtn.addEventListener('click', closeLeaveConfirm);
+leaveConfirmCancelBtn.addEventListener('click', closeLeaveConfirm);
+
+leaveConfirmActionBtn.addEventListener('click', async () => {
+  if (!leaveConfirmHandler) return;
+  leaveConfirmActionBtn.disabled = true;
+  leaveConfirmError.hidden = true;
+  try {
+    await leaveConfirmHandler();
+    closeLeaveConfirm();
+  } catch (err) {
+    leaveConfirmError.textContent = err.message || 'Something went wrong. Please try again.';
+    leaveConfirmError.hidden = false;
+    leaveConfirmActionBtn.disabled = false;
+  }
+});
 
 // ---------------------------------------------------------------------
 // Small date helpers
@@ -1030,17 +1076,20 @@ addHolidayBtn.addEventListener('click', async () => {
   }
 });
 
-leaveHolidaysTableBody.addEventListener('click', async event => {
+leaveHolidaysTableBody.addEventListener('click', event => {
   const btn = event.target.closest('.leave-holiday-delete-btn');
   if (!btn) return;
-  btn.disabled = true;
-  const { error } = await supabase.from('public_holidays').delete().eq('id', btn.dataset.id);
-  if (!error) {
-    await loadCoreLeaveData({ force: true });
-    renderHolidaysTable();
-  } else {
-    btn.disabled = false;
-  }
+  const holiday = holidaysCache.find(h => h.id === btn.dataset.id);
+  openLeaveConfirm({
+    title: 'Delete public holiday?',
+    message: holiday ? `"${holiday.name}" (${holiday.holiday_date}) will be removed and no longer excluded from leave-day counts.` : 'This holiday will be removed and no longer excluded from leave-day counts.',
+    onConfirm: async () => {
+      const { error } = await supabase.from('public_holidays').delete().eq('id', btn.dataset.id);
+      if (error) throw error;
+      await loadCoreLeaveData({ force: true });
+      renderHolidaysTable();
+    }
+  });
 });
 
 // Standard Meeus/Jones/Butcher Gregorian Easter algorithm — deterministic
@@ -1428,18 +1477,23 @@ leaveAdjustForm.addEventListener('submit', async event => {
   }
 });
 
-leaveAdjustHistory.addEventListener('click', async event => {
+leaveAdjustHistory.addEventListener('click', event => {
   const btn = event.target.closest('.leave-adjust-delete-btn');
   if (!btn || !currentAdjustmentTarget) return;
-  btn.disabled = true;
-  const { error } = await supabase.from('leave_balance_adjustments').delete().eq('id', btn.dataset.id);
-  if (!error) {
-    await loadCoreLeaveData({ force: true });
-    renderBalancesTable();
-    openAdjustmentModal(currentAdjustmentTarget.employeeId, currentAdjustmentTarget.leaveTypeId);
-  } else {
-    btn.disabled = false;
-  }
+  const { employeeId, leaveTypeId } = currentAdjustmentTarget;
+  const adjustment = adjustmentsCache.find(a => a.id === btn.dataset.id);
+  const amount = adjustment ? `${adjustment.days > 0 ? '+' : ''}${adjustment.days} day${Math.abs(adjustment.days) === 1 ? '' : 's'} (${adjustment.adjustment_date})` : 'This adjustment';
+  openLeaveConfirm({
+    title: 'Delete this adjustment?',
+    message: `${amount} will be permanently removed and the balance recalculated.`,
+    onConfirm: async () => {
+      const { error } = await supabase.from('leave_balance_adjustments').delete().eq('id', btn.dataset.id);
+      if (error) throw error;
+      await loadCoreLeaveData({ force: true });
+      renderBalancesTable();
+      openAdjustmentModal(employeeId, leaveTypeId);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------
