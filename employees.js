@@ -1,4 +1,4 @@
-import { supabase } from './auth.js';
+import { supabase, callFunction } from './auth.js';
 
 const { earningComponents, irregularComponentIds, toNumber, money, rawMoney } = window.PayrollShared;
 
@@ -62,6 +62,14 @@ const settingsWorkHoursPerDay = document.getElementById('settingsWorkHoursPerDay
 const settingsBreakMinutes = document.getElementById('settingsBreakMinutes');
 const settingsWorkEndTimeDisplay = document.getElementById('settingsWorkEndTimeDisplay');
 
+const settingsLogoPreview = document.getElementById('settingsLogoPreview');
+const settingsLogoPlaceholder = document.getElementById('settingsLogoPlaceholder');
+const settingsLogoFile = document.getElementById('settingsLogoFile');
+const settingsLogoUrlInput = document.getElementById('settingsLogoUrlInput');
+const settingsLogoFetchBtn = document.getElementById('settingsLogoFetchBtn');
+const settingsLogoRemoveBtn = document.getElementById('settingsLogoRemoveBtn');
+const settingsLogoError = document.getElementById('settingsLogoError');
+
 const LOOKUP_LIST_ELS = { job_positions: 'jobPositionsList', departments: 'departmentsList', sub_departments: 'subDepartmentsList' };
 const LOOKUP_INPUT_ELS = { job_positions: 'jobPositionInput', departments: 'departmentInput', sub_departments: 'subDepartmentInput' };
 
@@ -71,6 +79,7 @@ let currentEmployeeStatus = 'active';
 let employeesLoaded = false;
 let cachedSettings = null;
 let settingsLoadPromise = null;
+let pendingLogoUrl = null; // staged like every other settings field -- only saved on "Save settings"
 
 function defaultSettings() {
   return {
@@ -84,6 +93,7 @@ function defaultSettings() {
     employee_number_include_year: false, employee_number_include_month: false,
     employee_number_next: 1,
     business_name: '',
+    business_logo_url: '',
     working_days: ['mon', 'tue', 'wed', 'thu', 'fri'],
     work_start_time: '08:00',
     work_hours_per_day: 8,
@@ -826,6 +836,7 @@ function renderLookupList(key, items) {
 
 function populateSettingsForm(s) {
   document.getElementById('settingsBusinessName').value = s.business_name || '';
+  setLogoPreview(s.business_logo_url || null);
   document.getElementById('settingsNssfRate').value = s.nssf_rate;
   document.getElementById('settingsNssfUpperLimit').value = rawMoney(s.nssf_upper_limit);
   document.getElementById('settingsShifRate').value = s.shif_rate;
@@ -896,6 +907,101 @@ function setSettingsPageBusy(busy) {
   settingsPage.querySelectorAll('input, textarea, select, button').forEach(el => { el.disabled = busy; });
 }
 
+// ---------------------------------------------------------------------
+// Business logo — upload or paste-a-URL-to-fetch, both funnel through
+// the same client-side resize step before landing in Supabase Storage,
+// so a fetched favicon and a manually uploaded file end up identical.
+// ---------------------------------------------------------------------
+
+function setLogoPreview(url) {
+  pendingLogoUrl = url || null;
+  settingsLogoPreview.src = url || '';
+  settingsLogoPreview.hidden = !url;
+  settingsLogoPlaceholder.hidden = !!url;
+  settingsLogoRemoveBtn.hidden = !url;
+}
+
+// Draws the source onto a canvas capped at maxDim x maxDim (preserving
+// aspect ratio, never upscaling) and exports PNG bytes. Also doubles as
+// sanitization for SVG uploads, since only rendered pixels come back out,
+// not the original markup (which could carry embedded script content).
+function resizeImageToBlob(source, maxDim = 320) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Could not process that image.'))), 'image/png');
+    };
+    img.onerror = () => reject(new Error('Could not read that image.'));
+    img.src = source;
+  });
+}
+
+async function uploadLogoBlob(blob) {
+  const { data: { user } } = await supabase.auth.getUser();
+  const path = `${user.id}/logo.png`;
+  const { error } = await supabase.storage.from('business-logos').upload(path, blob, { upsert: true, contentType: 'image/png' });
+  if (error) throw error;
+  const { data } = supabase.storage.from('business-logos').getPublicUrl(path);
+  return `${data.publicUrl}?v=${Date.now()}`;
+}
+
+async function processAndUploadLogo(source) {
+  const blob = await resizeImageToBlob(source);
+  return uploadLogoBlob(blob);
+}
+
+settingsLogoFile.addEventListener('change', async () => {
+  const file = settingsLogoFile.files?.[0];
+  settingsLogoFile.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    settingsLogoError.textContent = 'Choose an image file.';
+    settingsLogoError.hidden = false;
+    return;
+  }
+  settingsLogoError.hidden = true;
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const url = await processAndUploadLogo(objectUrl);
+    setLogoPreview(url);
+  } catch (err) {
+    settingsLogoError.textContent = err.message || 'Could not upload that logo.';
+    settingsLogoError.hidden = false;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+});
+
+settingsLogoFetchBtn.addEventListener('click', async () => {
+  const url = settingsLogoUrlInput.value.trim();
+  if (!url) return;
+  settingsLogoError.hidden = true;
+  settingsLogoFetchBtn.disabled = true;
+  try {
+    const { dataUrl } = await callFunction('/api/fetch-logo', { url });
+    const finalUrl = await processAndUploadLogo(dataUrl);
+    setLogoPreview(finalUrl);
+    settingsLogoUrlInput.value = '';
+  } catch (err) {
+    settingsLogoError.textContent = err.message || 'Could not fetch a logo from that URL.';
+    settingsLogoError.hidden = false;
+  } finally {
+    settingsLogoFetchBtn.disabled = false;
+  }
+});
+
+settingsLogoRemoveBtn.addEventListener('click', () => {
+  settingsLogoError.hidden = true;
+  setLogoPreview(null);
+});
+
 async function showSettingsPage() {
   setSettingsPageBusy(true);
   try {
@@ -941,6 +1047,7 @@ saveSettingsBtn.addEventListener('click', async () => {
 
   const payload = {
     business_name: document.getElementById('settingsBusinessName').value.trim(),
+    business_logo_url: pendingLogoUrl || null,
     working_days: [...settingsWorkingDays.querySelectorAll('input:checked')].map(cb => cb.value),
     work_start_time: settingsWorkStartTime.value || '08:00',
     work_hours_per_day: toNumber(settingsWorkHoursPerDay.value) || 8,

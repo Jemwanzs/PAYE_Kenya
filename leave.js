@@ -1314,6 +1314,7 @@ function buildLeaveBalancesPrintHtml() {
   const asOf = leaveBalancesAsOf.value || todayStr();
   const employees = filteredBalanceEmployees();
   const businessName = settingsCache?.business_name || 'Business name not set';
+  const logoUrl = settingsCache?.business_logo_url || '';
   const deptLabel = leaveBalancesDept.value || 'All departments';
   const subDeptLabel = leaveBalancesSubDept.value || 'All sub departments';
 
@@ -1355,7 +1356,10 @@ function buildLeaveBalancesPrintHtml() {
   return `
     <div class="muster-page">
       <div class="muster-header">
-        <div class="muster-business-name">${businessName}</div>
+        <div class="muster-header-top">
+          ${logoUrl ? `<img class="muster-logo" src="${logoUrl}" alt="" />` : ''}
+          <div class="muster-business-name">${businessName}</div>
+        </div>
         <div class="muster-cycle">Leave Balances — ${deptLabel} · ${subDeptLabel}</div>
         <div class="muster-meta">As of ${asOf} &middot; Generated: ${new Date().toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
       </div>

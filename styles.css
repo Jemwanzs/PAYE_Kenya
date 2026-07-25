@@ -78,6 +78,8 @@ svg { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; s
   margin-bottom: clamp(6px, 1.5vw, 10px);
 }
 
+.payslip-print-logo { max-height: 64px; max-width: 160px; object-fit: contain; flex: none; }
+
 .credit-line {
   margin: 0 0 clamp(10px, 2.5vw, 16px);
   padding: 0 8px;
@@ -317,6 +319,32 @@ h1 {
 }
 
 .field-grid.two-col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.settings-logo-row { display: flex; align-items: center; gap: 16px; margin-top: 14px; flex-wrap: wrap; }
+
+.settings-logo-preview {
+  width: 96px;
+  height: 96px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fffaf3;
+  padding: 8px;
+  text-align: center;
+}
+
+.settings-logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.settings-logo-preview .hint { margin: 0; }
+
+.settings-logo-controls { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 220px; }
+
+.settings-logo-upload-label { align-self: flex-start; cursor: pointer; }
+
+.settings-logo-url-row { display: flex; gap: 8px; }
+.settings-logo-url-row input { flex: 1; }
 
 label {
   display: grid;
@@ -1430,6 +1458,8 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
 .muster-page:last-child { page-break-after: auto; break-after: auto; }
 
 .muster-header { margin-bottom: 8px; }
+.muster-header-top { display: flex; align-items: center; gap: 8px; }
+.muster-logo { max-height: 32px; max-width: 100px; object-fit: contain; }
 .muster-business-name { font-size: 12px; font-weight: 800; }
 .muster-cycle { font-size: 9px; font-weight: 700; margin-top: 1px; }
 .muster-meta { font-size: 7.5px; color: #5a4d43; margin-top: 1px; }

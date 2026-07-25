@@ -19,7 +19,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Shared with employees.js so it reuses this exact client/session instead
 // of creating a second GoTrue client (which would fight over session storage).
-export { supabase };
+export { supabase, callFunction };
 
 const TRIAL_DAYS = 1;
 const DAY_MS = 24 * 60 * 60 * 1000;

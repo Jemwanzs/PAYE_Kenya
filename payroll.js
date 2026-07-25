@@ -667,8 +667,17 @@ function populatePayslipFields(payslip, prefix) {
   el('EmployerRows').innerHTML = rowsHtml(s.employer);
 }
 
-function printPayslip(payslip) {
+async function printPayslip(payslip) {
   populatePayslipFields(payslip, 'payslipPrint');
+
+  const { data: settingsRow } = await supabase.from('payroll_settings').select('business_name, business_logo_url').maybeSingle();
+  const logoEl = document.getElementById('payslipPrintLogo');
+  const businessNameEl = document.getElementById('payslipPrintBusinessName');
+  logoEl.src = settingsRow?.business_logo_url || '';
+  logoEl.hidden = !settingsRow?.business_logo_url;
+  businessNameEl.textContent = settingsRow?.business_name || '';
+  businessNameEl.hidden = !settingsRow?.business_name;
+
   const wrap = document.getElementById('payslipPrintWrap');
   wrap.hidden = false;
   document.body.classList.add('printing-payslip');
@@ -884,7 +893,7 @@ function chunkRows(list, size) {
   return out;
 }
 
-function buildMusterRollHtml(run, payslips, businessName) {
+function buildMusterRollHtml(run, payslips, { businessName, logoUrl } = {}) {
   const columns = buildMusterRollColumns(payslips);
   const pages = chunkRows(payslips, MUSTER_ROWS_PER_PAGE);
   if (!pages.length) pages.push([]);
@@ -896,7 +905,10 @@ function buildMusterRollHtml(run, payslips, businessName) {
     return `
       <div class="muster-page">
         <div class="muster-header">
-          <div class="muster-business-name">${businessName || 'Business name not set'}</div>
+          <div class="muster-header-top">
+            ${logoUrl ? `<img class="muster-logo" src="${logoUrl}" alt="" />` : ''}
+            <div class="muster-business-name">${businessName || 'Business name not set'}</div>
+          </div>
           <div class="muster-cycle">Payroll Cycle: ${run.period_label} (${run.period_start} to ${run.period_end})</div>
           <div class="muster-meta">Muster Roll — Status: ${statusLabel} &middot; Generated: ${generatedAt}</div>
         </div>
@@ -921,11 +933,10 @@ async function printMusterRoll() {
   musterRollBtn.disabled = true;
   payrollDetailError.hidden = true;
   try {
-    const { data: settingsRow } = await supabase.from('payroll_settings').select('business_name').maybeSingle();
-    const businessName = settingsRow?.business_name || '';
+    const { data: settingsRow } = await supabase.from('payroll_settings').select('business_name, business_logo_url').maybeSingle();
 
     const wrap = document.getElementById('musterRollPrintWrap');
-    wrap.innerHTML = buildMusterRollHtml(currentRunMeta, currentRunPayslips, businessName);
+    wrap.innerHTML = buildMusterRollHtml(currentRunMeta, currentRunPayslips, { businessName: settingsRow?.business_name, logoUrl: settingsRow?.business_logo_url });
 
     // @page size is a page-level rule, not scopable by a body class, so
     // it's injected just for this print and removed right after —

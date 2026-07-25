@@ -1084,7 +1084,9 @@
           <p class="eyebrow"><span class="eyebrow-dot"></span>Payslip</p>
           <h1 id="payslipPrintTitle">Employee — Period</h1>
           <p class="hero-copy" id="payslipPrintSubtitle"></p>
+          <p class="hero-copy" id="payslipPrintBusinessName" hidden></p>
         </div>
+        <img id="payslipPrintLogo" class="payslip-print-logo" alt="" hidden />
       </div>
       <div class="results-panel">
         <div class="net-card">
@@ -1127,6 +1129,27 @@
             <label>Business name <input type="text" id="settingsBusinessName" placeholder="e.g. Acme Kenya Ltd" /></label>
           </div>
           <p class="hint">Shown on the payroll muster roll and other printed company documents.</p>
+
+          <div class="settings-logo-row">
+            <div class="settings-logo-preview">
+              <img id="settingsLogoPreview" alt="Business logo" hidden />
+              <span id="settingsLogoPlaceholder" class="hint">No logo set</span>
+            </div>
+            <div class="settings-logo-controls">
+              <label class="ghost-button settings-logo-upload-label">
+                <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+                Upload logo
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" id="settingsLogoFile" hidden />
+              </label>
+              <div class="settings-logo-url-row">
+                <input type="url" id="settingsLogoUrlInput" placeholder="Paste a website or image URL" />
+                <button type="button" class="ghost-button" id="settingsLogoFetchBtn">Fetch</button>
+              </div>
+              <button type="button" class="ghost-button" id="settingsLogoRemoveBtn" hidden>Remove logo</button>
+            </div>
+          </div>
+          <p class="auth-error" id="settingsLogoError" hidden></p>
+          <p class="hint">Square logos work best. Shown on the payslip, muster roll, and leave balances report.</p>
         </details>
 
         <details open class="input-group">

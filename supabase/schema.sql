@@ -72,6 +72,7 @@ create table public.payroll_settings (
   employee_number_next         integer not null default 1,
   employee_number_separator    text not null default '',
   business_name            text not null default '',
+  business_logo_url        text,
   work_hours_per_day       numeric not null default 8,
   working_days             text[] not null default array['mon','tue','wed','thu','fri'],
   work_start_time          time not null default '08:00',
@@ -350,3 +351,30 @@ create policy "manage_own_leave_balance_adjustments"
 
 create index leave_balance_adjustments_employee_idx on public.leave_balance_adjustments(employee_id);
 create index leave_balance_adjustments_type_idx on public.leave_balance_adjustments(leave_type_id);
+
+-- Business logo storage (see migrate_business_logo.sql for the
+-- version-controlled description; kept in sync here for fresh installs).
+
+insert into storage.buckets (id, name, public)
+values ('business-logos', 'business-logos', true)
+on conflict (id) do nothing;
+
+create policy "business_logos_public_read"
+  on storage.objects for select
+  to public
+  using (bucket_id = 'business-logos');
+
+create policy "business_logos_owner_write"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'business-logos' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "business_logos_owner_update"
+  on storage.objects for update
+  to authenticated
+  using (bucket_id = 'business-logos' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "business_logos_owner_delete"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'business-logos' and (storage.foldername(name))[1] = auth.uid()::text);
