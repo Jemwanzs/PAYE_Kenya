@@ -78,7 +78,16 @@ svg { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; s
   margin-bottom: clamp(6px, 1.5vw, 10px);
 }
 
-.payslip-print-logo { max-height: 64px; max-width: 160px; object-fit: contain; flex: none; }
+.payslip-print-header { text-align: center; margin-bottom: 10px; }
+.payslip-print-header img { display: block; margin: 0 auto 6px; }
+.payslip-print-logo { max-height: 64px; max-width: 200px; object-fit: contain; }
+.payslip-print-business-name { margin: 0; font-weight: 800; color: var(--brand-dark); }
+
+/* Deliberately not .hero-copy: that class is forced to display:none under
+   @media print (see below) for the calculator's own hero-card tagline, and
+   there's no printing-payslip override that re-enables it -- reusing it
+   here would silently drop these lines from the actual printed payslip. */
+.payslip-print-line { margin: 2px 0 0; font-size: .85rem; color: var(--muted); }
 
 .credit-line {
   margin: 0 0 clamp(10px, 2.5vw, 16px);
@@ -1638,6 +1647,17 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
 .leave-adjust-history-row div { display: flex; flex-direction: column; gap: 2px; }
 .leave-adjust-history-row strong { color: var(--brand-dark); }
 .leave-adjust-history-row span { color: var(--muted); font-size: .78rem; }
+
+.bulk-upload-results {
+  margin: 14px 0 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+.bulk-upload-results p { margin: 4px 0; font-size: .8rem; color: var(--muted); }
+.bulk-upload-results strong { color: var(--brand-dark); }
 
 /* Leave balances printing: same trick as the muster roll, scoped to
    #leaveBalancePrintWrap; it reuses the .muster-* print styles above. */

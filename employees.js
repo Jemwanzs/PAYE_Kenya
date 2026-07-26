@@ -14,6 +14,16 @@ const formView = document.getElementById('employeeFormView');
 const addEmployeeBtn = document.getElementById('addEmployeeBtn');
 const assignMissingNumbersBtn = document.getElementById('assignMissingNumbersBtn');
 const assignMissingNumbersInfo = document.getElementById('assignMissingNumbersInfo');
+const bulkUploadEmployeesBtn = document.getElementById('bulkUploadEmployeesBtn');
+const bulkUploadOverlay = document.getElementById('bulkUploadOverlay');
+const bulkUploadCloseBtn = document.getElementById('bulkUploadCloseBtn');
+const bulkUploadCancelBtn = document.getElementById('bulkUploadCancelBtn');
+const bulkUploadTemplateBtn = document.getElementById('bulkUploadTemplateBtn');
+const bulkUploadFile = document.getElementById('bulkUploadFile');
+const bulkUploadImportBtn = document.getElementById('bulkUploadImportBtn');
+const bulkUploadError = document.getElementById('bulkUploadError');
+const bulkUploadInfo = document.getElementById('bulkUploadInfo');
+const bulkUploadResults = document.getElementById('bulkUploadResults');
 const statusFilterButtons = [...document.querySelectorAll('[data-status-filter]')];
 const employeeTableBody = document.getElementById('employeeTableBody');
 const employeesEmptyState = document.getElementById('employeesEmptyState');
@@ -686,6 +696,163 @@ assignMissingNumbersBtn.addEventListener('click', async () => {
     assignMissingNumbersInfo.hidden = false;
   } finally {
     assignMissingNumbersBtn.disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------------
+// Bulk employee upload — Excel template covering the core identity/
+// employment fields + basic pay only (not the full per-component
+// allowance/benefit matrix, which is added afterward by editing the
+// employee normally). Employee numbers are never a column: they're
+// always server-assigned via next_employee_number(), same as a single
+// manual add (see the submit handler above).
+// ---------------------------------------------------------------------
+
+const BULK_UPLOAD_HEADERS = [
+  'First name', 'Last name', 'Email', 'Phone', 'Gender',
+  'Job position', 'Department', 'Sub department', 'Employee type',
+  'Contract start date (YYYY-MM-DD)', 'Basic pay'
+];
+
+const VALID_EMPLOYEE_TYPES = ['primary', 'secondary', 'contractor', 'pwd'];
+const VALID_GENDERS = ['male', 'female', 'other'];
+
+function openBulkUploadModal() {
+  bulkUploadFile.value = '';
+  bulkUploadError.hidden = true;
+  bulkUploadInfo.hidden = true;
+  bulkUploadResults.hidden = true;
+  bulkUploadResults.innerHTML = '';
+  bulkUploadOverlay.hidden = false;
+}
+
+function closeBulkUploadModal() { bulkUploadOverlay.hidden = true; }
+
+bulkUploadEmployeesBtn.addEventListener('click', openBulkUploadModal);
+bulkUploadCloseBtn.addEventListener('click', closeBulkUploadModal);
+bulkUploadCancelBtn.addEventListener('click', closeBulkUploadModal);
+
+bulkUploadTemplateBtn.addEventListener('click', () => {
+  const sheet = XLSX.utils.aoa_to_sheet([
+    BULK_UPLOAD_HEADERS,
+    ['Jane', 'Wanjiru', 'jane@example.com', '0712345678', 'female', 'Accountant', 'Finance', '', 'primary', '2026-01-01', '80000']
+  ]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Employees');
+  XLSX.writeFile(workbook, 'employee-bulk-upload-template.xlsx');
+});
+
+// Excel date cells arrive as JS Date objects (via cellDates:true) built at
+// UTC midnight for that day. Reading them back out with local getters is
+// safe for Kenya's UTC+3 offset (always rolls forward into the same day,
+// never back) -- the inverse of the UTC-rollback pitfall already called
+// out elsewhere in this codebase (see leave.js's toDateStr).
+function formatBulkUploadDate(value) {
+  if (!value) return null;
+  if (value instanceof Date && !isNaN(value)) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+  const str = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const parsed = new Date(str);
+  if (isNaN(parsed)) return null;
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+}
+
+function bulkUploadRowToPayload(row) {
+  const firstName = String(row['First name'] || '').trim();
+  const lastName = String(row['Last name'] || '').trim();
+  if (!firstName || !lastName) return { error: 'First and last name are required.' };
+
+  const typeRaw = String(row['Employee type'] || '').trim().toLowerCase();
+  const employeeType = VALID_EMPLOYEE_TYPES.includes(typeRaw) ? typeRaw : 'primary';
+
+  const genderRaw = String(row['Gender'] || '').trim().toLowerCase();
+  const gender = VALID_GENDERS.includes(genderRaw) ? genderRaw : null;
+
+  const compensation = {
+    basicPay: toNumber(row['Basic pay']),
+    employeePensionRate: 0, employerPensionRate: 0,
+    lifeInsurance: 0, educationInsurance: 0, otherDeductions: 0
+  };
+  const statutoryToggles = {};
+  earningComponents.forEach(item => {
+    compensation[item.id] = 0;
+    const defaultChecked = !irregularComponentIds.includes(item.id);
+    statutoryToggles[item.id] = { nssf: defaultChecked, shif: defaultChecked, ahl: defaultChecked };
+  });
+
+  return {
+    payload: {
+      first_name: firstName,
+      last_name: lastName,
+      email: String(row['Email'] || '').trim() || null,
+      phone: String(row['Phone'] || '').trim() || null,
+      gender,
+      job_position: String(row['Job position'] || '').trim() || null,
+      department: String(row['Department'] || '').trim() || null,
+      sub_department: String(row['Sub department'] || '').trim() || null,
+      employee_type: employeeType,
+      contract_start_date: formatBulkUploadDate(row['Contract start date (YYYY-MM-DD)'] || row['Contract start date']),
+      compensation,
+      statutory_toggles: statutoryToggles,
+      updated_at: new Date().toISOString()
+    }
+  };
+}
+
+bulkUploadImportBtn.addEventListener('click', async () => {
+  const file = bulkUploadFile.files?.[0];
+  bulkUploadError.hidden = true;
+  bulkUploadInfo.hidden = true;
+  bulkUploadResults.hidden = true;
+  if (!file) {
+    bulkUploadError.textContent = 'Choose a filled-in template file first.';
+    bulkUploadError.hidden = false;
+    return;
+  }
+
+  bulkUploadImportBtn.disabled = true;
+  try {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { cellDates: true });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+    const { data: { user } } = await supabase.auth.getUser();
+    let created = 0;
+    const skipped = [];
+
+    for (let i = 0; i < rows.length; i += 1) {
+      const rowNumber = i + 2; // +1 for header row, +1 for 1-indexing
+      const { payload, error: rowError } = bulkUploadRowToPayload(rows[i]);
+      if (rowError) {
+        skipped.push({ rowNumber, reason: rowError });
+        continue;
+      }
+      try {
+        const { data: employeeNumber, error: numberError } = await supabase.rpc('next_employee_number');
+        if (numberError) throw numberError;
+        const { error: insertError } = await supabase.from('employees').insert({ ...payload, employee_number: employeeNumber, user_id: user.id });
+        if (insertError) throw insertError;
+        created += 1;
+      } catch (err) {
+        skipped.push({ rowNumber, reason: err.message || 'Could not save this row.' });
+      }
+    }
+
+    bulkUploadInfo.textContent = `Created ${created} employee${created === 1 ? '' : 's'}.`;
+    bulkUploadInfo.hidden = false;
+    if (skipped.length) {
+      bulkUploadResults.innerHTML = skipped.map(s => `<p>Row ${s.rowNumber}: <strong>${s.reason}</strong></p>`).join('');
+      bulkUploadResults.hidden = false;
+    }
+    if (created) await loadEmployees();
+  } catch (err) {
+    bulkUploadError.textContent = err.message || 'Could not read that file.';
+    bulkUploadError.hidden = false;
+  } finally {
+    bulkUploadImportBtn.disabled = false;
   }
 });
 

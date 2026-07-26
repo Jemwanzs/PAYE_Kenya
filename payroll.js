@@ -27,12 +27,14 @@ const createPayrollRunBtnText = document.getElementById('createPayrollRunBtnText
 const payrollDetailBackBtn = document.getElementById('payrollDetailBackBtn');
 const payrollDetailTitle = document.getElementById('payrollDetailTitle');
 const payrollDetailError = document.getElementById('payrollDetailError');
+const payrollDetailInfo = document.getElementById('payrollDetailInfo');
 const payrollDetailStatus = document.getElementById('payrollDetailStatus');
 const payrollDetailSummary = document.getElementById('payrollDetailSummary');
 const payrollDetailTableBody = document.getElementById('payrollDetailTableBody');
 const approveRunBtn = document.getElementById('approveRunBtn');
 const processRunBtn = document.getElementById('processRunBtn');
 const recalcRunBtn = document.getElementById('recalcRunBtn');
+const syncEmployeeNumbersBtn = document.getElementById('syncEmployeeNumbersBtn');
 const editRunBtn = document.getElementById('editRunBtn');
 const recallRunBtn = document.getElementById('recallRunBtn');
 const musterRollBtn = document.getElementById('musterRollBtn');
@@ -233,6 +235,17 @@ syncPayrollEmployeesBtn.addEventListener('click', async () => {
 
 payrollPeriodEnd.addEventListener('change', renderEligibilityLists);
 
+// Defaults the period to a full calendar month -- built from the y/m/d
+// parts directly rather than new Date(...).toISOString(), which reports
+// UTC and would roll the date back a day in Kenya's UTC+3 timezone.
+payrollPeriodStart.addEventListener('change', () => {
+  if (!payrollPeriodStart.value) return;
+  const [y, m] = payrollPeriodStart.value.split('-').map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  payrollPeriodEnd.value = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  renderEligibilityLists();
+});
+
 function renderEligibilityLists() {
   const periodEnd = payrollPeriodEnd.value;
   const eligible = [];
@@ -424,6 +437,7 @@ async function openRun(runId) {
 
   payrollDetailTableBody.innerHTML = rows.map(p => `
     <tr class="payroll-detail-row" data-payslip-id="${p.id}">
+      <td>${p.employee_snapshot.employee_number || '—'}</td>
       <td><svg class="row-expand-icon" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>${p.employee_snapshot.first_name} ${p.employee_snapshot.last_name}${p.is_final_dues ? ' <small>(final dues)</small>' : ''}</td>
       <td>${classificationLabels[p.employee_snapshot.employee_type] || p.employee_snapshot.employee_type}</td>
       <td>${money(p.results.displayGross)}</td>
@@ -535,6 +549,61 @@ recalcRunBtn.addEventListener('click', async () => {
   }
 });
 
+// Unlike "Sync payroll" (draft-only, recomputes pay), this only refreshes
+// employee_snapshot.employee_number -- never compensation_snapshot/results
+// -- so it's safe to run on approved/processed runs without reopening the
+// locked financial figures to recomputation.
+syncEmployeeNumbersBtn.addEventListener('click', async () => {
+  if (!currentRunId) return;
+  syncEmployeeNumbersBtn.disabled = true;
+  payrollDetailError.hidden = true;
+  payrollDetailInfo.hidden = true;
+  try {
+    const { data: payslips, error: payslipsError } = await supabase.from('payslips').select('*').eq('payroll_run_id', currentRunId);
+    if (payslipsError) throw payslipsError;
+
+    const employeeIds = [...new Set((payslips || []).map(p => p.employee_id).filter(Boolean))];
+    const { data: freshEmployees, error: employeesError } = await supabase.from('employees').select('id, employee_number').in('id', employeeIds);
+    if (employeesError) throw employeesError;
+    const employeeById = new Map((freshEmployees || []).map(e => [e.id, e]));
+
+    // Employees added before the numbering feature (or never manually
+    // backfilled via Employees > Assign missing numbers) can still have
+    // employee_number = null -- assign one now instead of requiring a
+    // separate trip there first.
+    for (const employee of employeeById.values()) {
+      if (employee.employee_number) continue;
+      const { data: employeeNumber, error: numberError } = await supabase.rpc('next_employee_number');
+      if (numberError) throw numberError;
+      const { error: updateEmpError } = await supabase.from('employees').update({ employee_number: employeeNumber }).eq('id', employee.id);
+      if (updateEmpError) throw updateEmpError;
+      employee.employee_number = employeeNumber;
+    }
+
+    let synced = 0;
+    for (const payslip of payslips || []) {
+      const employee = employeeById.get(payslip.employee_id);
+      if (!employee || payslip.employee_snapshot?.employee_number === employee.employee_number) continue;
+      const { error: updateError } = await supabase.from('payslips').update({
+        employee_snapshot: { ...payslip.employee_snapshot, employee_number: employee.employee_number }
+      }).eq('id', payslip.id);
+      if (updateError) throw updateError;
+      synced += 1;
+    }
+
+    payrollDetailInfo.textContent = synced
+      ? `Synced employee numbers on ${synced} payslip${synced === 1 ? '' : 's'}.`
+      : 'Employee numbers were already up to date.';
+    payrollDetailInfo.hidden = false;
+    await openRun(currentRunId);
+  } catch (err) {
+    payrollDetailError.textContent = err.message || 'Could not sync employee numbers.';
+    payrollDetailError.hidden = false;
+  } finally {
+    syncEmployeeNumbersBtn.disabled = false;
+  }
+});
+
 editRunBtn.addEventListener('click', async () => {
   if (!currentRunId) return;
   editRunBtn.disabled = true;
@@ -629,6 +698,7 @@ function payslipBreakdownSections(payslip) {
     header: {
       title: `${emp.first_name} ${emp.last_name} — ${payslip.period_label || ''}`,
       subtitle: [emp.job_position, emp.department, classificationLabels[emp.employee_type]].filter(Boolean).join(' · '),
+      employeeNumber: emp.employee_number ? `Employee #: ${emp.employee_number}` : '',
       netPay: r.netPay,
       rate: `Effective PAYE rate: ${r.effectiveTaxRate.toFixed(2)}%`,
       gross: r.displayGross,
@@ -655,6 +725,7 @@ function populatePayslipFields(payslip, prefix) {
 
   el('Title').textContent = s.header.title;
   el('Subtitle').textContent = s.header.subtitle;
+  el('EmployeeNumber').textContent = s.header.employeeNumber;
   el('NetPay').textContent = money(s.header.netPay);
   el('Rate').textContent = s.header.rate;
   el('Gross').textContent = money(s.header.gross);
@@ -749,7 +820,7 @@ payrollDetailTableBody.addEventListener('click', event => {
   const expandRow = document.createElement('tr');
   expandRow.className = 'payroll-detail-expand-row';
   const cell = document.createElement('td');
-  cell.colSpan = 6;
+  cell.colSpan = 7;
   cell.innerHTML = renderInlineBreakdown(payslip);
   expandRow.appendChild(cell);
   row.after(expandRow);
