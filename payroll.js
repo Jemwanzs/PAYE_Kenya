@@ -2,6 +2,12 @@ import { supabase } from './auth.js';
 
 const { earningComponents, classificationLabels, toNumber, money, rawMoney, computePayroll } = window.PayrollShared;
 
+// Shared with employeePortal.js so an employee viewing/printing their own
+// payslip reuses this exact print path (it already renders into the
+// shared, page-agnostic #payslipPrintWrap DOM and needs no owner-only
+// state) instead of duplicating the payslip-breakdown math.
+export { printPayslip };
+
 const listView = document.getElementById('payrollListView');
 const newView = document.getElementById('payrollNewView');
 const detailView = document.getElementById('payrollDetailView');

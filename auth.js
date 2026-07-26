@@ -66,6 +66,20 @@ const accessBanner = document.getElementById('accessBanner');
 const appNav = document.getElementById('appNav');
 const appNavButtons = [...document.querySelectorAll('.app-nav-btn')];
 let activeAppPage = 'calculator';
+
+const ownerAppShell = document.getElementById('ownerAppShell');
+const employeePortalShell = document.getElementById('employeePortalShell');
+const employeePortalGreeting = document.getElementById('employeePortalGreeting');
+const employeePortalLogoutBtn = document.getElementById('employeePortalLogoutBtn');
+const employeePortalRevoked = document.getElementById('employeePortalRevoked');
+const employeePortalBody = document.getElementById('employeePortalBody');
+const employeePortalNavButtons = [...document.querySelectorAll('#employeePortalNav .app-nav-btn')];
+const employeePortalScreens = {
+  payslips: document.getElementById('employeePortalPayslipsView'),
+  details: document.getElementById('employeePortalDetailsView'),
+  leave: document.getElementById('employeePortalLeaveView')
+};
+let activeEmployeePortalPage = 'payslips';
 const buyMoreBtn = document.getElementById('buyMoreBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const resetBtn = document.getElementById('resetBtn');
@@ -93,11 +107,20 @@ const adminPreviewMenu = document.getElementById('adminPreviewMenu');
 // Detected synchronously from the URL so recovery mode is set before
 // Supabase's async client init has a chance to race renderForSession() and
 // flash the calculator screen instead of the "set new password" form.
-let inRecovery = location.hash.includes('type=recovery');
+// An invite link lands here the same way a password-recovery link does
+// (Supabase puts type=invite in the redirect hash) and needs the exact
+// same "set a password" step, so it's folded into the same flag/screen.
+let inRecovery = location.hash.includes('type=recovery') || location.hash.includes('type=invite');
 if (inRecovery) showScreen('recovery');
 
 function showScreen(name) {
   Object.entries(screens).forEach(([key, el]) => {
+    if (el) el.hidden = key !== name;
+  });
+}
+
+function showEmployeePortalScreen(name) {
+  Object.entries(employeePortalScreens).forEach(([key, el]) => {
     if (el) el.hidden = key !== name;
   });
 }
@@ -191,11 +214,40 @@ function renderAccess(access) {
   setPurchaseOverlay(!access.hasAccess, { forced: !access.hasAccess });
 }
 
+// An employee-role profile never touches computeAccess()/the owner's
+// trial-or-paid gate at all -- viewing your own payslip and applying for
+// leave is basic HR self-service, not the paid product, so it stays
+// available even if the business owner's own subscription has lapsed.
+// The only gate an employee is subject to is the RLS "status <>
+// terminated" check baked into every employee-scoped policy: if their own
+// employees row is no longer visible, fetching it here comes back empty
+// and they're shown the revoked message below.
+async function renderEmployeePortal(profile) {
+  ownerAppShell.hidden = true;
+  employeePortalShell.hidden = false;
+  employeePortalRevoked.hidden = true;
+  employeePortalBody.hidden = true;
+  setPurchaseOverlay(false);
+
+  const { data: employee } = await supabase.from('employees').select('*').maybeSingle();
+  if (!employee) {
+    employeePortalRevoked.hidden = false;
+    return;
+  }
+
+  employeePortalGreeting.textContent = `Welcome, ${employee.first_name}`;
+  employeePortalBody.hidden = false;
+  showEmployeePortalScreen(activeEmployeePortalPage);
+  document.dispatchEvent(new CustomEvent('employee-portal:ready', { detail: { employee, profile } }));
+}
+
 async function renderForSession() {
   const { data: { session } } = await supabase.auth.getSession();
   if (inRecovery) return;
 
   if (!session) {
+    ownerAppShell.hidden = false;
+    employeePortalShell.hidden = true;
     logoutBtn.hidden = true;
     resetBtn.hidden = true;
     printBtn.hidden = true;
@@ -208,6 +260,16 @@ async function renderForSession() {
     return;
   }
 
+  const profile = await fetchProfile();
+
+  if (profile.role === 'employee') {
+    employeePortalLogoutBtn.hidden = false;
+    await renderEmployeePortal(profile);
+    return;
+  }
+
+  ownerAppShell.hidden = false;
+  employeePortalShell.hidden = true;
   logoutBtn.hidden = false;
 
   const checkoutComplete = new URLSearchParams(location.search).get('checkout') === 'complete';
@@ -221,7 +283,6 @@ async function renderForSession() {
     }
   }
 
-  const profile = await fetchProfile();
   renderAccess(computeAccess(profile));
 }
 
@@ -293,6 +354,15 @@ appNavButtons.forEach(btn => {
     appNavButtons.forEach(b => b.setAttribute('aria-selected', String(b === btn)));
     showScreen(activeAppPage);
     document.dispatchEvent(new CustomEvent('app:page', { detail: { page: activeAppPage } }));
+  });
+});
+
+employeePortalNavButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeEmployeePortalPage = btn.dataset.portalPage;
+    employeePortalNavButtons.forEach(b => b.setAttribute('aria-selected', String(b === btn)));
+    showEmployeePortalScreen(activeEmployeePortalPage);
+    document.dispatchEvent(new CustomEvent('employee-portal:page', { detail: { page: activeEmployeePortalPage } }));
   });
 });
 
@@ -389,6 +459,11 @@ authToggleBtn.addEventListener('click', () => {
 });
 
 logoutBtn.addEventListener('click', async () => {
+  await supabase.auth.signOut();
+  renderForSession();
+});
+
+employeePortalLogoutBtn.addEventListener('click', async () => {
   await supabase.auth.signOut();
   renderForSession();
 });

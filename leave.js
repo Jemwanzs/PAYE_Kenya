@@ -2,6 +2,18 @@ import { supabase } from './auth.js';
 
 const { toNumber } = window.PayrollShared;
 
+// Shared with employeePortal.js so an employee's own leave tab reuses the
+// exact same balance formula and data-loading query set instead of
+// re-deriving them -- loadCoreLeaveData's plain select('*') calls come
+// back scoped to just what RLS allows a given session to see, so calling
+// it from an employee session naturally populates these caches with only
+// that employee's own rows, no extra filtering needed on either side.
+export {
+  loadCoreLeaveData, computeLeaveBalanceBreakdown, countWorkingDays, todayStr,
+  derivedStatus, statusPillClass, statusLabel,
+  employeesCache, leaveTypesCache, holidaysCache, applicationsCache, adjustmentsCache, settingsCache
+};
+
 // ---------------------------------------------------------------------
 // Element refs
 // ---------------------------------------------------------------------

@@ -109,6 +109,8 @@ create table public.employees (
   statutory_toggles    jsonb not null default '{}'::jsonb,
   employee_number      text,
   gender               text check (gender in ('male', 'female', 'other')),
+  auth_user_id         uuid unique references auth.users(id) on delete set null,
+  invited_at           timestamptz,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now()
 );
@@ -123,6 +125,21 @@ create policy "manage_own_employees"
 create index employees_user_id_idx on public.employees(user_id);
 create index employees_status_idx on public.employees(status);
 create unique index employees_user_number_idx on public.employees(user_id, employee_number) where employee_number is not null;
+
+-- Employee self-service portal login linkage (see
+-- migrate_employee_portal.sql for the version-controlled description;
+-- kept in sync here for fresh installs). employees is defined above this
+-- point, so profiles.employee_id can only be added here, not inline in
+-- the original create table profiles block at the top of this file.
+alter table public.profiles
+  add column if not exists role text not null default 'owner' check (role in ('owner', 'employee')),
+  add column if not exists owner_user_id uuid references auth.users(id),
+  add column if not exists employee_id uuid references public.employees(id);
+
+create policy "employee_read_own_employee_record"
+  on public.employees for select
+  to authenticated
+  using (auth_user_id = auth.uid() and status <> 'terminated');
 
 -- Dated compensation entries (see migrate_compensation_history.sql for
 -- the version-controlled description; kept in sync here for fresh
@@ -242,6 +259,28 @@ create policy "manage_own_payslips"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+-- Restricted to approved/processed runs -- a draft run's figures can still
+-- change before approval, so it must never be shown to the employee it
+-- belongs to.
+create policy "employee_read_own_payslips"
+  on public.payslips for select
+  to authenticated
+  using (
+    employee_id in (select id from public.employees where auth_user_id = auth.uid() and status <> 'terminated')
+    and payroll_run_id in (select id from public.payroll_runs where status in ('approved', 'processed'))
+  );
+
+create policy "employee_read_own_payroll_runs"
+  on public.payroll_runs for select
+  to authenticated
+  using (
+    status in ('approved', 'processed')
+    and id in (
+      select payroll_run_id from public.payslips
+      where employee_id in (select id from public.employees where auth_user_id = auth.uid() and status <> 'terminated')
+    )
+  );
+
 create index payslips_run_idx on public.payslips(payroll_run_id);
 create index payslips_employee_idx on public.payslips(employee_id);
 
@@ -274,6 +313,11 @@ create policy "manage_own_leave_types"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+create policy "employee_read_own_business_leave_types"
+  on public.leave_types for select
+  to authenticated
+  using (user_id in (select user_id from public.employees where auth_user_id = auth.uid() and status <> 'terminated'));
+
 create index leave_types_user_id_idx on public.leave_types(user_id);
 
 create table public.public_holidays (
@@ -290,6 +334,11 @@ create policy "manage_own_public_holidays"
   on public.public_holidays for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+create policy "employee_read_own_business_holidays"
+  on public.public_holidays for select
+  to authenticated
+  using (user_id in (select user_id from public.employees where auth_user_id = auth.uid() and status <> 'terminated'));
 
 create unique index public_holidays_user_date_idx on public.public_holidays(user_id, holiday_date);
 
@@ -322,6 +371,23 @@ create policy "manage_own_leave_applications"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+create policy "employee_read_own_leave_applications"
+  on public.leave_applications for select
+  to authenticated
+  using (employee_id in (select id from public.employees where auth_user_id = auth.uid() and status <> 'terminated'));
+
+-- An employee can only ever create a pending application for themselves,
+-- under their own employer's user_id -- never approve/reject (no update
+-- policy is granted to employees at all).
+create policy "employee_apply_for_own_leave"
+  on public.leave_applications for insert
+  to authenticated
+  with check (
+    status = 'pending'
+    and employee_id in (select id from public.employees where auth_user_id = auth.uid() and status <> 'terminated')
+    and user_id = (select user_id from public.employees where id = employee_id)
+  );
+
 create index leave_applications_user_id_idx on public.leave_applications(user_id);
 create index leave_applications_employee_idx on public.leave_applications(employee_id);
 create index leave_applications_type_idx on public.leave_applications(leave_type_id);
@@ -349,8 +415,21 @@ create policy "manage_own_leave_balance_adjustments"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+create policy "employee_read_own_leave_adjustments"
+  on public.leave_balance_adjustments for select
+  to authenticated
+  using (employee_id in (select id from public.employees where auth_user_id = auth.uid() and status <> 'terminated'));
+
 create index leave_balance_adjustments_employee_idx on public.leave_balance_adjustments(employee_id);
 create index leave_balance_adjustments_type_idx on public.leave_balance_adjustments(leave_type_id);
+
+-- payroll_settings is created earlier in this file (before employees
+-- exists), so this employee-scoped read policy for it can only be added
+-- here, once public.employees is available to reference.
+create policy "employee_read_own_business_settings"
+  on public.payroll_settings for select
+  to authenticated
+  using (user_id in (select user_id from public.employees where auth_user_id = auth.uid() and status <> 'terminated'));
 
 -- Business logo storage (see migrate_business_logo.sql for the
 -- version-controlled description; kept in sync here for fresh installs).

@@ -14,6 +14,8 @@ const formView = document.getElementById('employeeFormView');
 const addEmployeeBtn = document.getElementById('addEmployeeBtn');
 const assignMissingNumbersBtn = document.getElementById('assignMissingNumbersBtn');
 const assignMissingNumbersInfo = document.getElementById('assignMissingNumbersInfo');
+const employeeInviteError = document.getElementById('employeeInviteError');
+const employeeInviteInfo = document.getElementById('employeeInviteInfo');
 const bulkUploadEmployeesBtn = document.getElementById('bulkUploadEmployeesBtn');
 const bulkUploadOverlay = document.getElementById('bulkUploadOverlay');
 const bulkUploadCloseBtn = document.getElementById('bulkUploadCloseBtn');
@@ -860,7 +862,13 @@ function renderEmployeeTable(employees) {
   employeesEmptyState.hidden = employees.length > 0;
   employeesEmptyState.textContent = 'No employees here yet.';
 
-  employeeTableBody.innerHTML = employees.map(emp => `
+  employeeTableBody.innerHTML = employees.map(emp => {
+    const portalCell = emp.auth_user_id
+      ? '<span class="status-pill status-active">Active</span>'
+      : emp.email
+        ? `<button type="button" class="ghost-button employee-invite-btn" data-id="${emp.id}">Invite</button>`
+        : '<span class="hint">No email on file</span>';
+    return `
     <tr data-id="${emp.id}">
       <td>${emp.employee_number || '—'}</td>
       <td>${emp.first_name} ${emp.last_name}</td>
@@ -868,9 +876,11 @@ function renderEmployeeTable(employees) {
       <td>${emp.department || '—'}</td>
       <td>${employeeTypeLabels[emp.employee_type] || emp.employee_type}</td>
       <td><span class="status-pill status-${emp.status}">${emp.status === 'active' ? 'Active' : 'Terminated'}</span></td>
+      <td>${portalCell}</td>
       <td><button type="button" class="ghost-button employee-edit-btn" data-id="${emp.id}">Edit</button></td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 addEmployeeBtn.addEventListener('click', async () => {
@@ -906,6 +916,24 @@ employeeTableBody.addEventListener('click', async event => {
   Object.keys(COMP_HISTORY_SECTIONS).forEach(sectionKey => { resetCompHistoryForm(sectionKey); renderCompHistorySection(sectionKey); });
   setCompHistoryFormsEnabled(true);
   showForm();
+});
+
+employeeTableBody.addEventListener('click', async event => {
+  const btn = event.target.closest('.employee-invite-btn');
+  if (!btn) return;
+  employeeInviteError.hidden = true;
+  employeeInviteInfo.hidden = true;
+  btn.disabled = true;
+  try {
+    await callFunction('/api/invite-employee', { employee_id: btn.dataset.id });
+    employeeInviteInfo.textContent = 'Invite sent -- they\'ll get an email with a link to set a password and log in.';
+    employeeInviteInfo.hidden = false;
+    await loadEmployees();
+  } catch (err) {
+    employeeInviteError.textContent = err.message || 'Could not send this invite.';
+    employeeInviteError.hidden = false;
+    btn.disabled = false;
+  }
 });
 
 employeeForm.addEventListener('submit', async event => {
