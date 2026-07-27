@@ -1272,11 +1272,104 @@ settingsLogoRemoveBtn.addEventListener('click', () => {
   setLogoPreview(null);
 });
 
+// ---------------------------------------------------------------------
+// Approval workflows -- appoint portal-active employees as required
+// approvers for payroll runs / leave applications. Deliberately kept
+// simple: one workflow per action type, delete-and-reinsert its approver
+// list on every save (small lists, no need for a diffing update).
+// ---------------------------------------------------------------------
+
+const approvalWorkflowEligibleHint = document.getElementById('approvalWorkflowEligibleHint');
+const approvalWorkflowPayrollActive = document.getElementById('approvalWorkflowPayrollActive');
+const approvalWorkflowPayrollApprovers = document.getElementById('approvalWorkflowPayrollApprovers');
+const approvalWorkflowLeaveActive = document.getElementById('approvalWorkflowLeaveActive');
+const approvalWorkflowLeaveApprovers = document.getElementById('approvalWorkflowLeaveApprovers');
+const approvalWorkflowError = document.getElementById('approvalWorkflowError');
+const approvalWorkflowInfo = document.getElementById('approvalWorkflowInfo');
+const approvalWorkflowSaveBtn = document.getElementById('approvalWorkflowSaveBtn');
+
+async function loadApprovalWorkflows() {
+  approvalWorkflowError.hidden = true;
+  approvalWorkflowInfo.hidden = true;
+
+  const { data: eligible } = await supabase
+    .from('employees')
+    .select('id, first_name, last_name')
+    .not('auth_user_id', 'is', null)
+    .eq('status', 'active')
+    .order('first_name');
+  const eligibleEmployees = eligible || [];
+  approvalWorkflowEligibleHint.hidden = eligibleEmployees.length > 0;
+
+  const { data: workflows } = await supabase.from('approval_workflows').select('id, action_type, is_active');
+  const { data: approvers } = await supabase.from('approval_workflow_approvers').select('workflow_id, employee_id');
+
+  const payrollWorkflow = (workflows || []).find(w => w.action_type === 'payroll_run');
+  const leaveWorkflow = (workflows || []).find(w => w.action_type === 'leave_application');
+  const payrollApproverIds = new Set((approvers || []).filter(a => a.workflow_id === payrollWorkflow?.id).map(a => a.employee_id));
+  const leaveApproverIds = new Set((approvers || []).filter(a => a.workflow_id === leaveWorkflow?.id).map(a => a.employee_id));
+
+  approvalWorkflowPayrollActive.checked = !!payrollWorkflow?.is_active;
+  approvalWorkflowLeaveActive.checked = !!leaveWorkflow?.is_active;
+
+  const renderChecklist = (container, selectedIds) => {
+    container.innerHTML = eligibleEmployees.map(e => `
+      <label class="payroll-employee-row">
+        <input type="checkbox" value="${e.id}" ${selectedIds.has(e.id) ? 'checked' : ''} />
+        <span class="employee-name">${e.first_name} ${e.last_name}</span>
+      </label>
+    `).join('');
+  };
+  renderChecklist(approvalWorkflowPayrollApprovers, payrollApproverIds);
+  renderChecklist(approvalWorkflowLeaveApprovers, leaveApproverIds);
+}
+
+async function saveApprovalWorkflow(actionType, isActive, container, ownerId) {
+  const approverIds = [...container.querySelectorAll('input[type="checkbox"]:checked')].map(cb => cb.value);
+
+  const { data: workflow, error: upsertError } = await supabase
+    .from('approval_workflows')
+    .upsert({ user_id: ownerId, action_type: actionType, is_active: isActive, updated_at: new Date().toISOString() }, { onConflict: 'user_id,action_type' })
+    .select()
+    .single();
+  if (upsertError) throw upsertError;
+
+  const { error: deleteError } = await supabase.from('approval_workflow_approvers').delete().eq('workflow_id', workflow.id);
+  if (deleteError) throw deleteError;
+
+  if (approverIds.length) {
+    const { error: insertError } = await supabase.from('approval_workflow_approvers').insert(
+      approverIds.map(employeeId => ({ workflow_id: workflow.id, employee_id: employeeId, user_id: ownerId }))
+    );
+    if (insertError) throw insertError;
+  }
+}
+
+approvalWorkflowSaveBtn.addEventListener('click', async () => {
+  approvalWorkflowError.hidden = true;
+  approvalWorkflowInfo.hidden = true;
+  approvalWorkflowSaveBtn.disabled = true;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    await saveApprovalWorkflow('payroll_run', approvalWorkflowPayrollActive.checked, approvalWorkflowPayrollApprovers, user.id);
+    await saveApprovalWorkflow('leave_application', approvalWorkflowLeaveActive.checked, approvalWorkflowLeaveApprovers, user.id);
+    approvalWorkflowInfo.textContent = 'Approval workflows saved.';
+    approvalWorkflowInfo.hidden = false;
+    await loadApprovalWorkflows();
+  } catch (err) {
+    approvalWorkflowError.textContent = err.message || 'Could not save approval workflows.';
+    approvalWorkflowError.hidden = false;
+  } finally {
+    approvalWorkflowSaveBtn.disabled = false;
+  }
+});
+
 async function showSettingsPage() {
   setSettingsPageBusy(true);
   try {
     const settings = await loadSettings({ force: true });
     populateSettingsForm(settings);
+    await loadApprovalWorkflows();
   } finally {
     setSettingsPageBusy(false);
   }

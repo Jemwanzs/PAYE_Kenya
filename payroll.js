@@ -35,9 +35,11 @@ const payrollDetailTitle = document.getElementById('payrollDetailTitle');
 const payrollDetailError = document.getElementById('payrollDetailError');
 const payrollDetailInfo = document.getElementById('payrollDetailInfo');
 const payrollDetailStatus = document.getElementById('payrollDetailStatus');
+const payrollAwaitingApproval = document.getElementById('payrollAwaitingApproval');
 const payrollDetailSummary = document.getElementById('payrollDetailSummary');
 const payrollDetailTableBody = document.getElementById('payrollDetailTableBody');
 const approveRunBtn = document.getElementById('approveRunBtn');
+const submitForApprovalBtn = document.getElementById('submitForApprovalBtn');
 const processRunBtn = document.getElementById('processRunBtn');
 const recalcRunBtn = document.getElementById('recalcRunBtn');
 const syncEmployeeNumbersBtn = document.getElementById('syncEmployeeNumbersBtn');
@@ -469,7 +471,65 @@ async function openRun(runId) {
   recallRunBtn.hidden = run.status === 'draft';
   recallRunBtn.textContent = run.status === 'processed' ? 'Recall to approved' : 'Recall to draft';
   musterRollBtn.hidden = run.status === 'draft';
+
+  await applyApprovalWorkflowUi(run);
 }
+
+// When an active payroll approval workflow exists, the owner's direct
+// Approve button is replaced by "Submit for approval" + a status line --
+// approval power moves entirely to the appointed approvers (see
+// record_approval_decision() in the approval-workflows migration). With
+// no active workflow, approveRunBtn's own draft-only visibility above is
+// left completely alone.
+async function applyApprovalWorkflowUi(run) {
+  submitForApprovalBtn.hidden = true;
+  payrollAwaitingApproval.hidden = true;
+  if (run.status !== 'draft') return;
+
+  const { data: workflow } = await supabase.from('approval_workflows').select('id').eq('action_type', 'payroll_run').eq('is_active', true).maybeSingle();
+  if (!workflow) return;
+
+  approveRunBtn.hidden = true;
+
+  const { data: actions } = await supabase.from('approval_actions').select('*').eq('action_type', 'payroll_run').eq('record_id', run.id);
+  if (!actions || !actions.length) {
+    submitForApprovalBtn.hidden = false;
+    return;
+  }
+
+  const employeeIds = [...new Set(actions.map(a => a.employee_id))];
+  const { data: approverEmployees } = await supabase.from('employees').select('id, first_name, last_name').in('id', employeeIds);
+  const nameById = new Map((approverEmployees || []).map(e => [e.id, `${e.first_name} ${e.last_name}`]));
+
+  const rejected = actions.find(a => a.decision === 'rejected');
+  const pending = actions.filter(a => a.decision === 'pending').map(a => nameById.get(a.employee_id) || 'Unknown');
+
+  if (rejected) {
+    payrollAwaitingApproval.textContent = `Rejected by ${nameById.get(rejected.employee_id) || 'an approver'}${rejected.comment ? `: "${rejected.comment}"` : ''}. Edit and resubmit.`;
+    submitForApprovalBtn.hidden = false;
+  } else if (pending.length) {
+    payrollAwaitingApproval.textContent = `Awaiting approval from: ${pending.join(', ')}.`;
+  } else {
+    payrollAwaitingApproval.textContent = 'All approvers have signed off.';
+  }
+  payrollAwaitingApproval.hidden = false;
+}
+
+submitForApprovalBtn.addEventListener('click', async () => {
+  if (!currentRunId) return;
+  submitForApprovalBtn.disabled = true;
+  payrollDetailError.hidden = true;
+  try {
+    const { error } = await supabase.rpc('submit_for_approval', { p_action_type: 'payroll_run', p_record_id: currentRunId });
+    if (error) throw error;
+    await openRun(currentRunId);
+  } catch (err) {
+    payrollDetailError.textContent = err.message || 'Could not submit this run for approval.';
+    payrollDetailError.hidden = false;
+  } finally {
+    submitForApprovalBtn.disabled = false;
+  }
+});
 
 payrollRunsTableBody.addEventListener('click', event => {
   const btn = event.target.closest('.payroll-run-open-btn');
@@ -760,12 +820,31 @@ async function printPayslip(payslip) {
   businessNameEl.textContent = settingsRow?.business_name || '';
   businessNameEl.hidden = !settingsRow?.business_name;
 
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' });
+  document.getElementById('payslipPrintDate').textContent = `Printed ${dateStr}, ${timeStr}`;
+
+  // @page size is a page-level rule, not scopable by a body class, so it's
+  // injected just for this print and removed right after -- same trick as
+  // the muster roll/leave balances prints. margin: 0 also leaves
+  // Chrome/Edge no room to draw their default header/footer (date + page
+  // title/URL); .payslip-print-footer replicates that space from inside
+  // the content instead, with our own date/time and credit line.
+  const pageStyle = document.createElement('style');
+  pageStyle.textContent = '@page { size: A5 landscape; margin: 0; }';
+  document.head.appendChild(pageStyle);
+  const originalTitle = document.title;
+  document.title = '';
+
   const wrap = document.getElementById('payslipPrintWrap');
   wrap.hidden = false;
   document.body.classList.add('printing-payslip');
   window.print();
   document.body.classList.remove('printing-payslip');
   wrap.hidden = true;
+  pageStyle.remove();
+  document.title = originalTitle;
 }
 
 // Non-highlight rows whose value rounds to zero are dropped entirely on
@@ -1022,7 +1101,7 @@ async function printMusterRoll() {
 
     // @page size is a page-level rule, not scopable by a body class, so
     // it's injected just for this print and removed right after —
-    // payslip/calculator prints stay on the browser's portrait default.
+    // the calculator's own print stays on the browser's portrait default.
     // margin: 0 also leaves Chrome/Edge no room to draw their default
     // header/footer (page title + URL); .muster-page replicates the
     // visual margin from inside the content instead.

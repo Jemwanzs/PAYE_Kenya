@@ -378,7 +378,10 @@ function showLeaveTab(tab) {
   leaveApplyView.hidden = true;
   leaveTypeFormView.hidden = true;
 
-  if (tab === 'applications') renderApplicationsTable();
+  if (tab === 'applications') {
+    renderApplicationsTable();
+    loadLeaveApprovalState().then(renderApplicationsTable);
+  }
   if (tab === 'types') renderLeaveTypesTable();
   if (tab === 'calendar') renderCalendar();
   if (tab === 'holidays') renderHolidaysTable();
@@ -440,6 +443,47 @@ function derivedStatus(app) {
 const statusPillClass = { pending: 'terminated', approved: 'active', completed: 'active', rejected: 'terminated' };
 const statusLabel = { pending: 'Pending', approved: 'Approved', completed: 'Completed', rejected: 'Rejected' };
 
+// When an active leave approval workflow exists, the owner's direct
+// Approve/Reject buttons are replaced by an "Awaiting: ..." line --
+// approval power moves entirely to the appointed approvers (see
+// record_approval_decision() in the approval-workflows migration).
+// Populated by loadLeaveApprovalState(), read synchronously by
+// renderApplicationsTable() so that function doesn't need to become async.
+let leaveWorkflowActive = false;
+let leaveApprovalActionsByAppId = new Map();
+
+async function loadLeaveApprovalState() {
+  const { data: workflow } = await supabase.from('approval_workflows').select('id').eq('action_type', 'leave_application').eq('is_active', true).maybeSingle();
+  leaveWorkflowActive = !!workflow;
+  leaveApprovalActionsByAppId = new Map();
+  if (!leaveWorkflowActive) return;
+
+  const pendingAppIds = applicationsCache.filter(a => a.status === 'pending').map(a => a.id);
+  if (!pendingAppIds.length) return;
+
+  const { data: actions } = await supabase.from('approval_actions').select('*').eq('action_type', 'leave_application').in('record_id', pendingAppIds);
+  if (!actions || !actions.length) return;
+
+  const employeeIds = [...new Set(actions.map(a => a.employee_id))];
+  const { data: approverEmployees } = await supabase.from('employees').select('id, first_name, last_name').in('id', employeeIds);
+  const nameById = new Map((approverEmployees || []).map(e => [e.id, `${e.first_name} ${e.last_name}`]));
+
+  actions.forEach(a => {
+    const list = leaveApprovalActionsByAppId.get(a.record_id) || [];
+    list.push({ ...a, name: nameById.get(a.employee_id) || 'Unknown' });
+    leaveApprovalActionsByAppId.set(a.record_id, list);
+  });
+}
+
+function awaitingApprovalHtml(appId) {
+  const actionsForApp = leaveApprovalActionsByAppId.get(appId);
+  if (!actionsForApp || !actionsForApp.length) return '<span class="hint">Not yet submitted</span>';
+  const rejected = actionsForApp.find(a => a.decision === 'rejected');
+  if (rejected) return `<span class="hint">Rejected by ${rejected.name}</span>`;
+  const pending = actionsForApp.filter(a => a.decision === 'pending').map(a => a.name);
+  return pending.length ? `<span class="hint">Awaiting: ${pending.join(', ')}</span>` : '<span class="hint">All approved</span>';
+}
+
 function renderApplicationsTable() {
   const search = leaveApplicationsSearch.value.trim().toLowerCase();
   const rows = applicationsCache
@@ -453,10 +497,12 @@ function renderApplicationsTable() {
   leaveApplicationsTableBody.innerHTML = rows.map(({ app, employee, type }) => {
     const status = derivedStatus(app);
     const comment = app.decision_comment ? ` title="${app.decision_comment.replace(/"/g, '&quot;')}"` : '';
-    const actions = app.status === 'pending'
-      ? `<button type="button" class="ghost-button leave-approve-btn" data-id="${app.id}">Approve</button>
-         <button type="button" class="ghost-button leave-reject-btn" data-id="${app.id}">Reject</button>`
-      : '';
+    const actions = app.status !== 'pending'
+      ? ''
+      : leaveWorkflowActive
+        ? awaitingApprovalHtml(app.id)
+        : `<button type="button" class="ghost-button leave-approve-btn" data-id="${app.id}">Approve</button>
+           <button type="button" class="ghost-button leave-reject-btn" data-id="${app.id}">Reject</button>`;
     return `
       <tr data-id="${app.id}">
         <td>${employeeName(employee)}</td>

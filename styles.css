@@ -672,6 +672,65 @@ textarea {
 .admin-preview-menu button:hover { background: rgba(242, 140, 24, .12); }
 .admin-preview-menu button.is-exit { color: var(--brand-dark); border-top: 1px dashed var(--line); margin-top: 4px; padding-top: 10px; }
 
+.notification-bell-wrap { position: relative; }
+.notification-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-size: .62rem;
+  font-weight: 800;
+}
+.notification-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: min(320px, 84vw);
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 10px;
+  background: var(--card, #fff8ee);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 18px 36px rgba(16, 8, 3, .22);
+}
+.notification-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  background: rgba(242, 140, 24, .08);
+  cursor: pointer;
+  font-size: .8rem;
+  color: #4b3428;
+}
+.notification-item:last-child { margin-bottom: 0; }
+.notification-item.is-read { background: transparent; color: var(--muted); }
+.notification-item small { display: block; color: var(--muted); font-size: .7rem; margin-top: 2px; }
+
+.approval-list { display: grid; gap: 8px; margin-top: 10px; }
+.approval-item {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fffaf3;
+}
+.approval-item p { margin: 0 0 8px; font-size: .84rem; }
+.approval-item textarea { width: 100%; margin-bottom: 8px; font-size: .82rem; }
+.approval-item .auth-actions { gap: 8px; }
+
 .access-banner {
   margin-bottom: clamp(6px, 1.5vw, 10px);
   padding: 10px 18px;
@@ -1091,12 +1150,69 @@ textarea {
   /* Zero-value line items clutter a payslip printout — keep them on-screen, drop them here. */
   .zero-row { display: none; }
 
-  /* Keep the payslip printout as a single flowing list, unchanged by the on-screen earnings/deductions columns */
+  /* Default for the calculator's own "Print summary" -- a single flowing
+     list, unchanged by the on-screen earnings/deductions columns. The
+     payslip print overrides this back to two real columns below. */
   .breakdown-columns { grid-template-columns: 1fr; gap: 0; }
   .breakdown-col + .breakdown-col { border-left: 0; padding-left: 0; }
   .breakdown-col h3 { display: none; }
   .breakdown-net { margin-top: 0; padding-top: 0; border-top: 0; }
   .breakdown-net .result-row { padding: 3px 0; font-size: 10.5px; border-bottom: 0; }
+
+  /* Payslip print: A5 landscape (see printPayslip()'s injected @page
+     rule), earnings left / deductions right, employer contributions
+     recentered and shrunk below -- all scoped to body.printing-payslip so
+     none of this touches the calculator's own on-screen "Print summary". */
+  body.printing-payslip {
+    font-size: 9.5px;
+  }
+
+  body.printing-payslip #payslipPrintWrap {
+    position: relative;
+    min-height: 128mm;
+    padding: 8mm 10mm calc(8mm + 16px);
+    box-sizing: border-box;
+  }
+
+  body.printing-payslip .payslip-print-header { margin-bottom: 6px; }
+  body.printing-payslip .payslip-print-logo { max-height: 34px; max-width: 110px; }
+  body.printing-payslip .payslip-print-business-name { font-size: 11px; }
+  body.printing-payslip .hero-card { margin-bottom: 8px; padding-bottom: 6px; }
+  body.printing-payslip .eyebrow { font-size: 8px; }
+  body.printing-payslip h1 { font-size: 15px; }
+  body.printing-payslip .payslip-print-line { font-size: 9px; }
+
+  body.printing-payslip .results-panel { display: block; }
+  body.printing-payslip .net-card { padding: 8px 12px; margin-bottom: 6px; }
+  body.printing-payslip .net-card strong { font-size: 18px; margin: 2px 0; }
+  body.printing-payslip .summary-cards { margin-bottom: 6px; }
+  body.printing-payslip .summary-cards div { padding: 6px 8px; }
+  body.printing-payslip .summary-cards strong { font-size: 11px; }
+  body.printing-payslip .breakdown-card { padding: 8px 10px; }
+
+  body.printing-payslip .breakdown-columns { grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  body.printing-payslip .breakdown-col h3 { display: block; font-size: 9.5px; margin-bottom: 4px; }
+  body.printing-payslip .breakdown-col + .breakdown-col { border-left: 1px solid var(--line); padding-left: 14px; }
+
+  body.printing-payslip .employer-card {
+    margin: 8px auto 0;
+    max-width: 62%;
+    text-align: center;
+  }
+  body.printing-payslip .employer-card h2 { font-size: 9.5px; }
+  body.printing-payslip .employer-card .result-row { text-align: left; }
+
+  body.printing-payslip .payslip-print-footer {
+    position: absolute;
+    left: 10mm;
+    right: 10mm;
+    bottom: 8mm;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 7.5px;
+    color: var(--muted);
+  }
 }
 
 .earning-line {
@@ -1532,6 +1648,9 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
 }
 .checkbox-grid label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
 .checkbox-grid input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--brand); }
+
+.approval-workflow-toggle { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: .88rem; }
+.approval-workflow-toggle input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--brand); }
 
 .eligibility-checklist {
   max-height: 220px;

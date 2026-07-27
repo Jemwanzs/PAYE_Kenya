@@ -780,6 +780,7 @@
         <p class="auth-error" id="payrollDetailError" hidden></p>
         <p class="auth-info" id="payrollDetailInfo" hidden></p>
         <div class="access-banner" id="payrollDetailStatus"></div>
+        <p class="hint" id="payrollAwaitingApproval" hidden></p>
 
         <div class="summary-cards" id="payrollDetailSummary"></div>
 
@@ -795,6 +796,7 @@
 
         <div class="employee-form-actions">
           <button type="button" class="primary-button" id="approveRunBtn">Approve run</button>
+          <button type="button" class="primary-button" id="submitForApprovalBtn" hidden>Submit for approval</button>
           <button type="button" class="primary-button" id="processRunBtn" hidden>Mark processed</button>
           <button type="button" class="ghost-button" id="recallRunBtn" hidden></button>
         </div>
@@ -1170,6 +1172,10 @@
           <div id="payslipPrintEmployerRows"></div>
         </div>
       </div>
+      <div class="payslip-print-footer">
+        <span id="payslipPrintDate"></span>
+        <span>Powered by: James Sammy - JMSolutions - Kenya PAYE &amp; Tax Calculator</span>
+      </div>
     </div>
 
     <section class="settings-page" id="settingsPage" hidden>
@@ -1306,6 +1312,25 @@
           </div>
         </details>
 
+        <details class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span>Approval workflows</span></summary>
+          <p class="hint">Appoint employees (who already have portal access) as required approvers. When active, every appointed approver must approve before it counts as approved -- your own direct approve action is disabled for that type while a workflow is active.</p>
+
+          <p class="hint" id="approvalWorkflowEligibleHint" hidden>No employees have portal access yet -- invite one from Employees first.</p>
+
+          <label class="approval-workflow-toggle"><input type="checkbox" id="approvalWorkflowPayrollActive" /> Require approval for payroll runs</label>
+          <div id="approvalWorkflowPayrollApprovers" class="payroll-employee-list"></div>
+
+          <label class="approval-workflow-toggle" style="margin-top:16px"><input type="checkbox" id="approvalWorkflowLeaveActive" /> Require approval for leave applications</label>
+          <div id="approvalWorkflowLeaveApprovers" class="payroll-employee-list"></div>
+
+          <p class="auth-error" id="approvalWorkflowError" hidden></p>
+          <p class="auth-info" id="approvalWorkflowInfo" hidden></p>
+          <div class="auth-actions" style="margin-top:14px">
+            <button type="button" class="primary-button" id="approvalWorkflowSaveBtn">Save approval workflows</button>
+          </div>
+        </details>
+
         <div class="employee-form-actions">
           <button type="button" class="primary-button" id="saveSettingsBtn">Save settings</button>
         </div>
@@ -1321,6 +1346,16 @@
         <p class="hero-copy">View your payslips, personal details, and leave balances, and apply for leave.</p>
       </div>
       <div class="hero-actions">
+        <div class="notification-bell-wrap">
+          <button type="button" class="ghost-button" id="employeePortalNotifyBtn" aria-expanded="false" aria-controls="employeePortalNotifyMenu">
+            <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="notification-count" id="employeePortalNotifyCount" hidden>0</span>
+          </button>
+          <div class="notification-menu" id="employeePortalNotifyMenu" hidden>
+            <p class="hint" id="employeePortalNotifyEmpty">No notifications.</p>
+            <div id="employeePortalNotifyList"></div>
+          </div>
+        </div>
         <button type="button" class="ghost-button" id="employeePortalLogoutBtn">Log out</button>
       </div>
     </section>
@@ -1340,6 +1375,10 @@
         <button type="button" class="app-nav-btn" data-portal-page="leave" aria-selected="false">
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M8 14l2 2 4-4"/></svg>
           Leave
+        </button>
+        <button type="button" class="app-nav-btn" data-portal-page="approvals" id="employeePortalApprovalsNavBtn" aria-selected="false" hidden>
+          <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Approvals
         </button>
       </nav>
 
@@ -1406,6 +1445,19 @@
             </table>
           </div>
         </div>
+      </section>
+
+      <section class="employees-page" id="employeePortalApprovalsView" hidden>
+        <div class="panel-header">
+          <h2>Approvals</h2>
+          <button type="button" class="ghost-button" id="employeePortalApprovalsRefreshBtn">
+            <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+            Refresh
+          </button>
+        </div>
+        <p class="auth-error" id="employeePortalApprovalsError" hidden></p>
+        <p class="hint" id="employeePortalApprovalsEmpty" hidden>Nothing awaiting your approval.</p>
+        <div id="employeePortalApprovalsList" class="approval-list"></div>
       </section>
     </div>
   </main>

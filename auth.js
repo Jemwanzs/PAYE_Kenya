@@ -77,7 +77,8 @@ const employeePortalNavButtons = [...document.querySelectorAll('#employeePortalN
 const employeePortalScreens = {
   payslips: document.getElementById('employeePortalPayslipsView'),
   details: document.getElementById('employeePortalDetailsView'),
-  leave: document.getElementById('employeePortalLeaveView')
+  leave: document.getElementById('employeePortalLeaveView'),
+  approvals: document.getElementById('employeePortalApprovalsView')
 };
 let activeEmployeePortalPage = 'payslips';
 const buyMoreBtn = document.getElementById('buyMoreBtn');

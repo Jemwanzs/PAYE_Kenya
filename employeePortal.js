@@ -27,18 +27,32 @@ const applySaveBtn = document.getElementById('employeePortalApplySaveBtn');
 const applicationsEmpty = document.getElementById('employeePortalApplicationsEmpty');
 const applicationsTableBody = document.getElementById('employeePortalApplicationsTableBody');
 
+const notifyBtn = document.getElementById('employeePortalNotifyBtn');
+const notifyMenu = document.getElementById('employeePortalNotifyMenu');
+const notifyCount = document.getElementById('employeePortalNotifyCount');
+const notifyEmpty = document.getElementById('employeePortalNotifyEmpty');
+const notifyList = document.getElementById('employeePortalNotifyList');
+const approvalsNavBtn = document.getElementById('employeePortalApprovalsNavBtn');
+const approvalsError = document.getElementById('employeePortalApprovalsError');
+const approvalsEmpty = document.getElementById('employeePortalApprovalsEmpty');
+const approvalsList = document.getElementById('employeePortalApprovalsList');
+const approvalsRefreshBtn = document.getElementById('employeePortalApprovalsRefreshBtn');
+
 let currentEmployee = null;
 
 document.addEventListener('employee-portal:ready', event => {
   currentEmployee = event.detail.employee;
   renderDetails(currentEmployee);
   renderPayslips();
+  checkIsApprover();
+  loadNotifications();
 });
 
 document.addEventListener('employee-portal:page', event => {
   if (event.detail.page === 'payslips') renderPayslips();
   if (event.detail.page === 'details') renderDetails(currentEmployee);
   if (event.detail.page === 'leave') renderLeaveTab();
+  if (event.detail.page === 'approvals') renderApprovalsTab();
 });
 
 function renderDetails(employee) {
@@ -223,5 +237,148 @@ applyForm.addEventListener('submit', async event => {
     applyError.hidden = false;
   } finally {
     applySaveBtn.disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------------
+// Approvals tab + notification inbox -- only relevant to the (usually
+// small) subset of employees the owner has appointed as approvers in
+// Settings > Approval workflows. Simple in-app inbox, populated on
+// portal load and on demand -- no realtime/websocket infrastructure.
+// ---------------------------------------------------------------------
+
+async function checkIsApprover() {
+  if (!currentEmployee) return;
+  const { data } = await supabase.from('approval_workflow_approvers').select('id').eq('employee_id', currentEmployee.id).limit(1);
+  approvalsNavBtn.hidden = !data?.length;
+}
+
+async function loadNotifications() {
+  const { data } = await supabase.from('notifications').select('*').eq('is_read', false).order('created_at', { ascending: false });
+  const rows = data || [];
+  notifyCount.hidden = rows.length === 0;
+  notifyCount.textContent = String(rows.length);
+  notifyEmpty.hidden = rows.length > 0;
+  notifyList.innerHTML = rows.map(n => `
+    <button type="button" class="notification-item" data-id="${n.id}">
+      ${n.title}
+      <small>${new Date(n.created_at).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</small>
+    </button>
+  `).join('');
+}
+
+function closeNotifyMenu() {
+  notifyMenu.hidden = true;
+  notifyBtn.setAttribute('aria-expanded', 'false');
+}
+
+notifyBtn.addEventListener('click', () => {
+  const opening = notifyMenu.hidden;
+  notifyMenu.hidden = !opening;
+  notifyBtn.setAttribute('aria-expanded', String(opening));
+});
+
+document.addEventListener('click', event => {
+  if (!notifyMenu.hidden && !event.target.closest('.notification-bell-wrap')) closeNotifyMenu();
+});
+
+notifyList.addEventListener('click', async event => {
+  const btn = event.target.closest('.notification-item');
+  if (!btn) return;
+  closeNotifyMenu();
+  await supabase.from('notifications').update({ is_read: true }).eq('id', btn.dataset.id);
+  await loadNotifications();
+  document.querySelector('[data-portal-page="approvals"]')?.click();
+});
+
+approvalsRefreshBtn.addEventListener('click', renderApprovalsTab);
+
+async function renderApprovalsTab() {
+  approvalsError.hidden = true;
+  approvalsRefreshBtn.disabled = true;
+  try {
+    const { data: actions, error } = await supabase.from('approval_actions').select('*').eq('decision', 'pending').order('created_at', { ascending: true });
+    if (error) throw error;
+    const rows = actions || [];
+
+    approvalsEmpty.hidden = rows.length > 0;
+    if (!rows.length) {
+      approvalsList.innerHTML = '';
+      return;
+    }
+
+    const payrollIds = rows.filter(a => a.action_type === 'payroll_run').map(a => a.record_id);
+    const leaveIds = rows.filter(a => a.action_type === 'leave_application').map(a => a.record_id);
+
+    const [runsRes, appsRes] = await Promise.all([
+      payrollIds.length ? supabase.from('payroll_runs').select('id, period_label').in('id', payrollIds) : { data: [] },
+      leaveIds.length ? supabase.from('leave_applications').select('id, employee_id, leave_type_id, start_date, end_date, days_requested').in('id', leaveIds) : { data: [] }
+    ]);
+    const runById = new Map((runsRes.data || []).map(r => [r.id, r]));
+    const apps = appsRes.data || [];
+
+    const employeeIds = [...new Set(apps.map(a => a.employee_id))];
+    const leaveTypeIds = [...new Set(apps.map(a => a.leave_type_id))];
+    const [employeesRes, typesRes] = await Promise.all([
+      employeeIds.length ? supabase.from('employees').select('id, first_name, last_name').in('id', employeeIds) : { data: [] },
+      leaveTypeIds.length ? supabase.from('leave_types').select('id, name').in('id', leaveTypeIds) : { data: [] }
+    ]);
+    const employeeById = new Map((employeesRes.data || []).map(e => [e.id, e]));
+    const typeById = new Map((typesRes.data || []).map(t => [t.id, t]));
+    const appById = new Map(apps.map(a => [a.id, a]));
+
+    approvalsList.innerHTML = rows.map(action => {
+      let summary = 'Record no longer available';
+      if (action.action_type === 'payroll_run') {
+        const run = runById.get(action.record_id);
+        summary = run ? `Payroll run: ${run.period_label}` : summary;
+      } else {
+        const app = appById.get(action.record_id);
+        if (app) {
+          const emp = employeeById.get(app.employee_id);
+          const type = typeById.get(app.leave_type_id);
+          summary = `Leave: ${emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'} — ${type ? type.name : 'Leave'}, ${app.start_date} to ${app.end_date} (${Number(app.days_requested).toFixed(2)} day(s))`;
+        }
+      }
+      return `
+        <div class="approval-item" data-action-id="${action.id}">
+          <p>${summary}</p>
+          <textarea placeholder="Comment (optional for approve, recommended for reject)" rows="2"></textarea>
+          <div class="auth-actions">
+            <button type="button" class="primary-button approval-approve-btn" data-id="${action.id}">Approve</button>
+            <button type="button" class="ghost-button approval-reject-btn" data-id="${action.id}">Reject</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    approvalsError.textContent = err.message || 'Could not load approvals.';
+    approvalsError.hidden = false;
+  } finally {
+    approvalsRefreshBtn.disabled = false;
+  }
+}
+
+approvalsList.addEventListener('click', async event => {
+  const btn = event.target.closest('.approval-approve-btn, .approval-reject-btn');
+  if (!btn) return;
+  const item = btn.closest('.approval-item');
+  const comment = item.querySelector('textarea').value.trim() || null;
+  const decision = btn.classList.contains('approval-approve-btn') ? 'approved' : 'rejected';
+
+  approvalsError.hidden = true;
+  item.querySelectorAll('button').forEach(b => { b.disabled = true; });
+  try {
+    const { error } = await supabase.rpc('record_approval_decision', {
+      p_action_id: btn.dataset.id,
+      p_decision: decision,
+      p_comment: comment
+    });
+    if (error) throw error;
+    await renderApprovalsTab();
+  } catch (err) {
+    approvalsError.textContent = err.message || 'Could not record your decision.';
+    approvalsError.hidden = false;
+    item.querySelectorAll('button').forEach(b => { b.disabled = false; });
   }
 });
