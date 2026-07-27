@@ -37,7 +37,7 @@ const approvalsError = document.getElementById('employeePortalApprovalsError');
 const approvalsEmpty = document.getElementById('employeePortalApprovalsEmpty');
 const approvalsList = document.getElementById('employeePortalApprovalsList');
 const approvalsRefreshBtn = document.getElementById('employeePortalApprovalsRefreshBtn');
-const leaveApprovalsSection = document.getElementById('employeePortalLeaveApprovalsSection');
+const leaveApprovalsNavBtn = document.getElementById('employeePortalLeaveApprovalsNavBtn');
 const leaveApprovalsError = document.getElementById('employeePortalLeaveApprovalsError');
 const leaveApprovalsEmpty = document.getElementById('employeePortalLeaveApprovalsEmpty');
 const leaveApprovalsList = document.getElementById('employeePortalLeaveApprovalsList');
@@ -59,6 +59,7 @@ document.addEventListener('employee-portal:page', event => {
   if (event.detail.page === 'payslips') renderPayslips();
   if (event.detail.page === 'details') renderDetails(currentEmployee);
   if (event.detail.page === 'leave') renderLeaveTab();
+  if (event.detail.page === 'leave-approvals') renderLeaveApprovalsTab();
   if (event.detail.page === 'approvals') renderApprovalsTab();
 });
 
@@ -149,7 +150,6 @@ async function renderLeaveTab() {
     applyType.innerHTML = leaveTypesCache.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
     updateApplyPreview();
     renderApplications(employee);
-    if (isLeaveApprover) renderLeaveApprovals();
   } catch (err) {
     leaveError.textContent = err.message || 'Could not load your leave data.';
     leaveError.hidden = false;
@@ -280,8 +280,7 @@ async function checkApproverRoles() {
   isPayrollApprover = actionTypes.includes('payroll_run');
   isLeaveApprover = actionTypes.includes('leave_application');
   approvalsNavBtn.hidden = !isPayrollApprover;
-  leaveApprovalsSection.hidden = !isLeaveApprover;
-  if (isLeaveApprover) renderLeaveApprovals();
+  leaveApprovalsNavBtn.hidden = !isLeaveApprover;
 }
 
 async function loadNotifications() {
@@ -319,15 +318,21 @@ notifyList.addEventListener('click', async event => {
   closeNotifyMenu();
   await supabase.from('notifications').update({ is_read: true }).eq('id', btn.dataset.id);
   await loadNotifications();
-  // Leave approvals live inside the Leave tab's "For my approval"
-  // section; payroll approvals live in their own standalone tab.
-  const targetPage = btn.dataset.linkType === 'leave_application' ? 'leave' : 'approvals';
+  const targetPage = btn.dataset.linkType === 'leave_application' ? 'leave-approvals' : 'approvals';
   document.querySelector(`[data-portal-page="${targetPage}"]`)?.click();
 });
 
 // Shared by both the payroll-only Approvals tab and the leave-only "For
 // my approval" section -- takes already-fetched-and-filtered
 // approval_actions rows and builds the same card markup for either.
+// Renders one card per approval_actions row. A still-pending row gets the
+// actionable card (comment + Approve/Reject); an already-decided row
+// (shown in the Leave approvals tab's full history, never in the
+// Payroll approvals tab, which only ever fetches decision='pending')
+// gets a read-only summary of what this approver decided, plus the
+// application's own overall status -- since one approver's decision
+// doesn't necessarily mean the whole thing is resolved yet if more than
+// one approver is required.
 async function buildApprovalItemsHtml(rows) {
   if (!rows.length) return '';
 
@@ -336,7 +341,7 @@ async function buildApprovalItemsHtml(rows) {
 
   const [runsRes, appsRes] = await Promise.all([
     payrollIds.length ? supabase.from('payroll_runs').select('id, period_label').in('id', payrollIds) : { data: [] },
-    leaveIds.length ? supabase.from('leave_applications').select('id, employee_id, leave_type_id, start_date, end_date, days_requested').in('id', leaveIds) : { data: [] }
+    leaveIds.length ? supabase.from('leave_applications').select('id, employee_id, leave_type_id, start_date, end_date, days_requested, status').in('id', leaveIds) : { data: [] }
   ]);
   const runById = new Map((runsRes.data || []).map(r => [r.id, r]));
   const apps = appsRes.data || [];
@@ -353,6 +358,7 @@ async function buildApprovalItemsHtml(rows) {
 
   return rows.map(action => {
     let summary = 'Record no longer available';
+    let overallStatus = '';
     if (action.action_type === 'payroll_run') {
       const run = runById.get(action.record_id);
       summary = run ? `Payroll run: ${run.period_label}` : summary;
@@ -362,16 +368,36 @@ async function buildApprovalItemsHtml(rows) {
         const emp = employeeById.get(app.employee_id);
         const type = typeById.get(app.leave_type_id);
         summary = `Leave: ${emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'} — ${type ? type.name : 'Leave'}, ${app.start_date} to ${app.end_date} (${Number(app.days_requested).toFixed(2)} day(s))`;
+        overallStatus = app.status;
       }
     }
-    return `
-      <div class="approval-item" data-action-id="${action.id}">
-        <p>${summary}</p>
-        <textarea placeholder="Comment (optional for approve, recommended for reject)" rows="2"></textarea>
-        <div class="auth-actions">
-          <button type="button" class="primary-button approval-approve-btn" data-id="${action.id}">Approve</button>
-          <button type="button" class="ghost-button approval-reject-btn" data-id="${action.id}">Reject</button>
+
+    if (action.decision === 'pending') {
+      return `
+        <div class="approval-item" data-action-id="${action.id}">
+          <p>${summary}</p>
+          <textarea placeholder="Comment (optional for approve, recommended for reject)" rows="2"></textarea>
+          <div class="auth-actions">
+            <button type="button" class="primary-button approval-approve-btn" data-id="${action.id}">Approve</button>
+            <button type="button" class="ghost-button approval-reject-btn" data-id="${action.id}">Reject</button>
+          </div>
         </div>
+      `;
+    }
+
+    const decidedDate = action.decided_at
+      ? new Date(action.decided_at).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })
+      : '';
+    const decisionPillClass = action.decision === 'approved' ? 'active' : 'terminated';
+    const overallLabel = overallStatus ? overallStatus.charAt(0).toUpperCase() + overallStatus.slice(1) : '';
+    return `
+      <div class="approval-item approval-item-decided" data-action-id="${action.id}">
+        <p>${summary}</p>
+        <p class="approval-decision-line">
+          <span class="status-pill status-${decisionPillClass}">You ${action.decision}${decidedDate ? ` · ${decidedDate}` : ''}</span>
+          ${overallLabel ? `<span class="hint">Overall: ${overallLabel}</span>` : ''}
+        </p>
+        ${action.comment ? `<p class="hint">&ldquo;${action.comment}&rdquo;</p>` : ''}
       </div>
     `;
   }).join('');
@@ -394,13 +420,21 @@ async function renderApprovalsTab() {
   }
 }
 
-async function renderLeaveApprovals() {
+// Leave approvals tab shows the FULL history for this approver, not just
+// what's still pending -- pending items sort first (most actionable),
+// then already-decided ones most-recently-decided first.
+async function renderLeaveApprovalsTab() {
   leaveApprovalsError.hidden = true;
   leaveApprovalsRefreshBtn.disabled = true;
   try {
-    const { data: actions, error } = await supabase.from('approval_actions').select('*').eq('decision', 'pending').eq('action_type', 'leave_application').order('created_at', { ascending: true });
+    const { data: actions, error } = await supabase.from('approval_actions').select('*').eq('action_type', 'leave_application').order('created_at', { ascending: true });
     if (error) throw error;
-    const rows = actions || [];
+    const rows = (actions || []).sort((a, b) => {
+      if (a.decision === 'pending' && b.decision !== 'pending') return -1;
+      if (a.decision !== 'pending' && b.decision === 'pending') return 1;
+      if (a.decision !== 'pending' && b.decision !== 'pending') return new Date(b.decided_at) - new Date(a.decided_at);
+      return 0;
+    });
     leaveApprovalsEmpty.hidden = rows.length > 0;
     leaveApprovalsList.innerHTML = await buildApprovalItemsHtml(rows);
   } catch (err) {
@@ -412,7 +446,7 @@ async function renderLeaveApprovals() {
 }
 
 approvalsRefreshBtn.addEventListener('click', renderApprovalsTab);
-leaveApprovalsRefreshBtn.addEventListener('click', renderLeaveApprovals);
+leaveApprovalsRefreshBtn.addEventListener('click', renderLeaveApprovalsTab);
 
 function wireApprovalDecisions(container, errorEl, onDecided) {
   container.addEventListener('click', async event => {
@@ -441,4 +475,4 @@ function wireApprovalDecisions(container, errorEl, onDecided) {
 }
 
 wireApprovalDecisions(approvalsList, approvalsError, renderApprovalsTab);
-wireApprovalDecisions(leaveApprovalsList, leaveApprovalsError, renderLeaveApprovals);
+wireApprovalDecisions(leaveApprovalsList, leaveApprovalsError, renderLeaveApprovalsTab);

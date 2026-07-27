@@ -78,6 +78,7 @@ const employeePortalScreens = {
   payslips: document.getElementById('employeePortalPayslipsView'),
   details: document.getElementById('employeePortalDetailsView'),
   leave: document.getElementById('employeePortalLeaveView'),
+  'leave-approvals': document.getElementById('employeePortalLeaveApprovalsView'),
   approvals: document.getElementById('employeePortalApprovalsView')
 };
 let activeEmployeePortalPage = 'payslips';

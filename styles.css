@@ -731,6 +731,13 @@ textarea {
 .approval-item textarea { width: 100%; margin-bottom: 8px; font-size: .82rem; }
 .approval-item .auth-actions { gap: 8px; }
 
+/* Already-decided items (read-only, no textarea/buttons) sit lighter
+   than pending ones so the actionable cards stay visually primary. */
+.approval-item-decided { background: transparent; }
+.approval-item-decided p:last-child { margin-bottom: 0; }
+.approval-decision-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.approval-decision-line .hint { margin: 0; }
+
 .access-banner {
   margin-bottom: clamp(6px, 1.5vw, 10px);
   padding: 10px 18px;

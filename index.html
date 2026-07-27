@@ -1388,6 +1388,10 @@
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M8 14l2 2 4-4"/></svg>
           Leave
         </button>
+        <button type="button" class="app-nav-btn" data-portal-page="leave-approvals" id="employeePortalLeaveApprovalsNavBtn" aria-selected="false" hidden>
+          <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Leave approvals
+        </button>
         <button type="button" class="app-nav-btn" data-portal-page="approvals" id="employeePortalApprovalsNavBtn" aria-selected="false" hidden>
           <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
           Payroll approvals
@@ -1429,19 +1433,6 @@
 
         <div class="portal-info-chips" id="employeePortalLeaveBalances"></div>
 
-        <div class="input-group portal-compact-group" id="employeePortalLeaveApprovalsSection" hidden>
-          <div class="panel-header">
-            <h2>For my approval</h2>
-            <button type="button" class="ghost-button" id="employeePortalLeaveApprovalsRefreshBtn">
-              <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
-              Refresh
-            </button>
-          </div>
-          <p class="auth-error" id="employeePortalLeaveApprovalsError" hidden></p>
-          <p class="hint" id="employeePortalLeaveApprovalsEmpty" hidden>Nothing awaiting your approval.</p>
-          <div id="employeePortalLeaveApprovalsList" class="approval-list"></div>
-        </div>
-
         <details class="input-group portal-compact-group">
           <summary><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Apply for leave</span></summary>
           <form id="employeePortalApplyForm">
@@ -1470,6 +1461,19 @@
             </table>
           </div>
         </div>
+      </section>
+
+      <section class="employees-page" id="employeePortalLeaveApprovalsView" hidden>
+        <div class="panel-header">
+          <h2>Leave approvals</h2>
+          <button type="button" class="ghost-button" id="employeePortalLeaveApprovalsRefreshBtn">
+            <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+            Refresh
+          </button>
+        </div>
+        <p class="auth-error" id="employeePortalLeaveApprovalsError" hidden></p>
+        <p class="hint" id="employeePortalLeaveApprovalsEmpty" hidden>No leave applications assigned to you yet.</p>
+        <div id="employeePortalLeaveApprovalsList" class="approval-list"></div>
       </section>
 
       <section class="employees-page" id="employeePortalApprovalsView" hidden>
