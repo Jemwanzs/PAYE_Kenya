@@ -145,17 +145,19 @@ function computePayslipRow({ runId, userId, employee, isFinalDues, settings, com
   };
 }
 
-// Two payroll runs for the same user cannot share a period label or an
-// identical start/end date pair — both would be ambiguous to reconcile
-// against payroll history. excludeRunId lets an edit-in-place check
-// against every *other* run without conflicting with itself.
+// Two payroll runs for the same user cannot share a period label, and their
+// date ranges cannot overlap at all (not just match exactly) -- an
+// employee's pay would otherwise land in two runs at once. excludeRunId
+// lets an edit-in-place check against every *other* run without
+// conflicting with itself.
 async function findConflictingRun({ periodStart, periodEnd, periodLabel, excludeRunId }) {
   const { data: runs } = await supabase.from('payroll_runs').select('id, period_label, period_start, period_end');
   const normalizedLabel = periodLabel.trim().toLowerCase();
   return (runs || []).find(run => {
     if (run.id === excludeRunId) return false;
-    if (run.period_start === periodStart && run.period_end === periodEnd) return true;
     if (run.period_label.trim().toLowerCase() === normalizedLabel) return true;
+    // Two [start, end] ranges overlap unless one ends before the other starts.
+    if (periodStart <= run.period_end && run.period_start <= periodEnd) return true;
     return false;
   });
 }
@@ -343,7 +345,10 @@ createPayrollRunBtn.addEventListener('click', async () => {
     excludeRunId: editingRunId
   });
   if (conflict) {
-    payrollNewError.textContent = `Another payroll run ("${conflict.period_label}") already uses this date range or label.`;
+    const isLabelClash = conflict.period_label.trim().toLowerCase() === periodLabel.trim().toLowerCase();
+    payrollNewError.textContent = isLabelClash
+      ? `Another payroll run already uses the label "${conflict.period_label}".`
+      : `This period overlaps with an existing run ("${conflict.period_label}", ${conflict.period_start} to ${conflict.period_end}).`;
     payrollNewError.hidden = false;
     return;
   }

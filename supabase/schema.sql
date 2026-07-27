@@ -259,27 +259,44 @@ create policy "manage_own_payslips"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+-- A plain cross-reference here (payslips policy queries payroll_runs,
+-- payroll_runs policy queries payslips) is a circular RLS dependency --
+-- Postgres detects it as infinite recursion and errors out on ANY select
+-- against either table, for every role. This SECURITY DEFINER function
+-- does the employee/payslip/run join itself; table owners bypass their
+-- own tables' RLS by default (already relied on for next_employee_number()
+-- above), so the function's internal query never re-triggers either
+-- table's policies, breaking the cycle instead of relocating it.
 -- Restricted to approved/processed runs -- a draft run's figures can still
 -- change before approval, so it must never be shown to the employee it
 -- belongs to.
+create or replace function public.employee_visible_payroll_run_ids()
+returns setof uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select distinct p.payroll_run_id
+  from public.payslips p
+  join public.employees e on e.id = p.employee_id
+  join public.payroll_runs r on r.id = p.payroll_run_id
+  where e.auth_user_id = auth.uid()
+    and e.status <> 'terminated'
+    and r.status in ('approved', 'processed');
+$$;
+
+grant execute on function public.employee_visible_payroll_run_ids() to authenticated;
+
 create policy "employee_read_own_payslips"
   on public.payslips for select
   to authenticated
-  using (
-    employee_id in (select id from public.employees where auth_user_id = auth.uid() and status <> 'terminated')
-    and payroll_run_id in (select id from public.payroll_runs where status in ('approved', 'processed'))
-  );
+  using (payroll_run_id in (select public.employee_visible_payroll_run_ids()));
 
 create policy "employee_read_own_payroll_runs"
   on public.payroll_runs for select
   to authenticated
-  using (
-    status in ('approved', 'processed')
-    and id in (
-      select payroll_run_id from public.payslips
-      where employee_id in (select id from public.employees where auth_user_id = auth.uid() and status <> 'terminated')
-    )
-  );
+  using (id in (select public.employee_visible_payroll_run_ids()));
 
 create index payslips_run_idx on public.payslips(payroll_run_id);
 create index payslips_employee_idx on public.payslips(employee_id);
