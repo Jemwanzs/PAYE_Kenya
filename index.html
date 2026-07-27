@@ -820,10 +820,16 @@
       <div class="employees-directory leave-subview" id="leaveApplicationsView">
         <div class="panel-header">
           <h3>Applications</h3>
-          <button type="button" class="primary-button" id="applyLeaveBtn">
-            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-            Apply for leave
-          </button>
+          <div class="hero-actions">
+            <button type="button" class="ghost-button" id="refreshLeaveApplicationsBtn">
+              <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+              Refresh
+            </button>
+            <button type="button" class="primary-button" id="applyLeaveBtn">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              Apply for leave
+            </button>
+          </div>
         </div>
         <p class="auth-error" id="leaveApplicationsError" hidden></p>
 

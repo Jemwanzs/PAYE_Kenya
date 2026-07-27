@@ -743,3 +743,79 @@ end;
 $$;
 
 grant execute on function public.record_approval_decision(uuid, text, text) to authenticated;
+
+-- Lets an approver's own portal session actually see what they're
+-- assigned to approve (see migrate_approver_visibility_fix.sql for the
+-- version-controlled description; kept in sync here for fresh installs).
+-- Without these, record_approval_decision() itself still worked (it's
+-- SECURITY DEFINER and bypasses RLS), but the display queries in the
+-- portal's approval screens were silently blocked -- "Unknown" applicant
+-- names and "Record no longer available". Each function does its whole
+-- join internally, bypassing RLS throughout, so none of them re-trigger
+-- any table's own policies.
+
+create or replace function public.approver_assigned_leave_application_ids()
+returns setof uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select aa.record_id
+  from public.approval_actions aa
+  join public.employees me on me.id = aa.employee_id
+  where aa.action_type = 'leave_application'
+    and me.auth_user_id = auth.uid()
+    and me.status <> 'terminated';
+$$;
+
+grant execute on function public.approver_assigned_leave_application_ids() to authenticated;
+
+create policy "approver_read_assigned_leave_applications"
+  on public.leave_applications for select
+  to authenticated
+  using (id in (select public.approver_assigned_leave_application_ids()));
+
+create or replace function public.approver_visible_applicant_ids()
+returns setof uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select distinct la.employee_id
+  from public.leave_applications la
+  join public.approval_actions aa on aa.action_type = 'leave_application' and aa.record_id = la.id
+  join public.employees me on me.id = aa.employee_id
+  where me.auth_user_id = auth.uid()
+    and me.status <> 'terminated';
+$$;
+
+grant execute on function public.approver_visible_applicant_ids() to authenticated;
+
+create policy "approver_read_applicant_employee_records"
+  on public.employees for select
+  to authenticated
+  using (id in (select public.approver_visible_applicant_ids()));
+
+create or replace function public.approver_assigned_payroll_run_ids()
+returns setof uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select aa.record_id
+  from public.approval_actions aa
+  join public.employees me on me.id = aa.employee_id
+  where aa.action_type = 'payroll_run'
+    and me.auth_user_id = auth.uid()
+    and me.status <> 'terminated';
+$$;
+
+grant execute on function public.approver_assigned_payroll_run_ids() to authenticated;
+
+create policy "approver_read_assigned_payroll_runs"
+  on public.payroll_runs for select
+  to authenticated
+  using (id in (select public.approver_assigned_payroll_run_ids()));

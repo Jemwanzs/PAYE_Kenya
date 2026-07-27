@@ -30,6 +30,7 @@ const leaveApplyView = document.getElementById('leaveApplyView');
 const leaveTypeFormView = document.getElementById('leaveTypeFormView');
 
 const applyLeaveBtn = document.getElementById('applyLeaveBtn');
+const refreshLeaveApplicationsBtn = document.getElementById('refreshLeaveApplicationsBtn');
 const leaveApplyTitle = document.getElementById('leaveApplyTitle');
 const leaveApplyBackBtn = document.getElementById('leaveApplyBackBtn');
 const leaveApplyError = document.getElementById('leaveApplyError');
@@ -416,6 +417,22 @@ function showLeaveTab(tab) {
 
 leaveTabButtons.forEach(btn => {
   btn.addEventListener('click', () => showLeaveTab(btn.dataset.leaveTab));
+});
+
+// loadCoreLeaveData only re-fetches once per page visit by default (see
+// its own force-flag check below), so an application submitted or a
+// decision recorded by someone else -- another admin, or an approver
+// acting from their own portal session -- never appears here until this
+// is explicitly forced, even if the owner just switches tabs and back.
+refreshLeaveApplicationsBtn.addEventListener('click', async () => {
+  refreshLeaveApplicationsBtn.disabled = true;
+  try {
+    await loadCoreLeaveData({ force: true });
+    await loadLeaveApprovalState();
+    renderApplicationsTable();
+  } finally {
+    refreshLeaveApplicationsBtn.disabled = false;
+  }
 });
 
 // ---------------------------------------------------------------------
