@@ -1659,6 +1659,53 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
 .bulk-upload-results p { margin: 4px 0; font-size: .8rem; color: var(--muted); }
 .bulk-upload-results strong { color: var(--brand-dark); }
 
+.bulk-upload-step { display: flex; gap: 10px; margin-top: 14px; }
+.bulk-upload-step-number {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 800;
+}
+.bulk-upload-step-body { flex: 1; min-width: 0; }
+.bulk-upload-step-body > strong { display: block; font-size: .88rem; margin-bottom: 2px; }
+.bulk-upload-step-body > .hint { margin: 0 0 8px; }
+
+.bulk-upload-file-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bulk-upload-choose-label { cursor: pointer; }
+.bulk-upload-filename { font-size: .82rem; color: var(--muted); overflow-wrap: anywhere; }
+
+/* Employee self-service portal — deliberately smaller/lighter than the
+   dashboard-style .summary-cards used elsewhere: this is a handful of
+   read-only facts about one person, not a set of headline stats worth a
+   full stat-tile treatment. */
+.portal-info-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.portal-info-chips > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  font-size: .78rem;
+}
+.portal-info-chips > div span { color: var(--muted); }
+.portal-info-chips > div strong { font-size: .84rem; color: var(--brand-dark); font-weight: 800; }
+
+.portal-compact-group { padding: 10px 12px; }
+.portal-section-title { margin: 0 0 8px; font-size: .82rem; font-weight: 800; color: var(--brand-dark); }
+
+.compact-table.employee-table { font-size: .8rem; }
+.compact-table.employee-table th { padding: 7px 10px; font-size: .66rem; }
+.compact-table.employee-table td { padding: 8px 10px; }
+
 /* Leave balances printing: same trick as the muster roll, scoped to
    #leaveBalancePrintWrap; it reuses the .muster-* print styles above. */
 body.printing-leave-balances .app-shell > *:not(#leaveBalancePrintWrap) { display: none !important; }

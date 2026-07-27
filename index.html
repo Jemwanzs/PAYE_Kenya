@@ -635,17 +635,37 @@
       </div>
 
       <div class="purchase-overlay" id="bulkUploadOverlay" hidden>
-        <div class="purchase-modal" style="max-width:520px">
+        <div class="purchase-modal" style="max-width:460px">
           <button type="button" class="modal-close" id="bulkUploadCloseBtn" aria-label="Close">&times;</button>
           <p class="eyebrow"><span class="eyebrow-dot"></span>Bulk upload</p>
           <h2>Add employees from Excel</h2>
-          <p class="hero-copy">Download the template, fill in a row per employee, then upload it back here. Employee numbers are assigned automatically — leave that column out.</p>
-          <div class="auth-actions" style="margin-top:10px">
-            <button type="button" class="ghost-button" id="bulkUploadTemplateBtn">Download template</button>
+
+          <div class="bulk-upload-step">
+            <span class="bulk-upload-step-number">1</span>
+            <div class="bulk-upload-step-body">
+              <strong>Download the template</strong>
+              <p class="hint">Departments, job positions, and employee type are already set up as dropdowns. Leave the employee number column out — it's assigned automatically.</p>
+              <button type="button" class="ghost-button" id="bulkUploadTemplateBtn">
+                <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+                Download template
+              </button>
+            </div>
           </div>
-          <div class="field-grid" style="margin-top:14px">
-            <label>Filled-in template <input type="file" accept=".xlsx,.xls" id="bulkUploadFile" /></label>
+
+          <div class="bulk-upload-step">
+            <span class="bulk-upload-step-number">2</span>
+            <div class="bulk-upload-step-body">
+              <strong>Upload the filled-in file</strong>
+              <div class="bulk-upload-file-row">
+                <label class="ghost-button bulk-upload-choose-label">
+                  Choose file
+                  <input type="file" accept=".xlsx,.xls" id="bulkUploadFile" hidden />
+                </label>
+                <span class="bulk-upload-filename" id="bulkUploadFilename">No file chosen</span>
+              </div>
+            </div>
           </div>
+
           <p class="auth-error" id="bulkUploadError" hidden></p>
           <p class="auth-info" id="bulkUploadInfo" hidden></p>
           <div id="bulkUploadResults" class="bulk-upload-results" hidden></div>
@@ -1324,10 +1344,17 @@
       </nav>
 
       <section class="employees-directory" id="employeePortalPayslipsView">
-        <div class="panel-header"><h2>My payslips</h2></div>
+        <div class="panel-header">
+          <h2>My payslips</h2>
+          <button type="button" class="ghost-button" id="employeePortalPayslipsRefreshBtn">
+            <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+            Refresh
+          </button>
+        </div>
+        <p class="auth-error" id="employeePortalPayslipsError" hidden></p>
         <p class="hint" id="employeePortalPayslipsEmpty" hidden>No payslips yet.</p>
         <div class="employee-table-wrap">
-          <table class="employee-table" id="employeePortalPayslipsTable">
+          <table class="employee-table compact-table" id="employeePortalPayslipsTable">
             <thead><tr><th>Period</th><th>Net pay</th><th></th></tr></thead>
             <tbody id="employeePortalPayslipsTableBody"></tbody>
           </table>
@@ -1336,15 +1363,22 @@
 
       <section class="employees-form" id="employeePortalDetailsView" hidden>
         <div class="panel-header"><h2>My details</h2></div>
-        <div class="summary-cards" id="employeePortalDetailsGrid"></div>
+        <div class="portal-info-chips" id="employeePortalDetailsGrid"></div>
       </section>
 
       <section class="employees-page" id="employeePortalLeaveView" hidden>
-        <div class="panel-header"><h2>Leave</h2></div>
+        <div class="panel-header">
+          <h2>Leave</h2>
+          <button type="button" class="ghost-button" id="employeePortalLeaveRefreshBtn">
+            <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+            Refresh
+          </button>
+        </div>
+        <p class="auth-error" id="employeePortalLeaveError" hidden></p>
 
-        <div class="summary-cards" id="employeePortalLeaveBalances"></div>
+        <div class="portal-info-chips" id="employeePortalLeaveBalances"></div>
 
-        <details open class="input-group">
+        <details class="input-group portal-compact-group">
           <summary><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Apply for leave</span></summary>
           <form id="employeePortalApplyForm">
             <div class="field-grid two-col">
@@ -1353,20 +1387,20 @@
               <label>Start date <input type="date" id="employeePortalApplyStart" required /></label>
               <label>End date <input type="date" id="employeePortalApplyEnd" required /></label>
             </div>
-            <label>Reason <textarea id="employeePortalApplyReason" rows="2"></textarea></label>
+            <label>Reason (optional) <textarea id="employeePortalApplyReason" rows="2"></textarea></label>
             <p class="hint" id="employeePortalApplyPreview"></p>
             <p class="auth-error" id="employeePortalApplyError" hidden></p>
-            <div class="auth-actions" style="margin-top:14px">
+            <div class="auth-actions" style="margin-top:10px">
               <button type="submit" class="primary-button" id="employeePortalApplySaveBtn">Submit application</button>
             </div>
           </form>
         </details>
 
-        <div class="input-group">
-          <p class="hint" style="margin-bottom:8px">My applications</p>
+        <div class="input-group portal-compact-group">
+          <p class="portal-section-title">My applications</p>
           <p class="hint" id="employeePortalApplicationsEmpty" hidden>No leave applications yet.</p>
           <div class="employee-table-wrap">
-            <table class="employee-table" id="employeePortalApplicationsTable">
+            <table class="employee-table compact-table" id="employeePortalApplicationsTable">
               <thead><tr><th>Leave type</th><th>Start</th><th>End</th><th>Days</th><th>Status</th></tr></thead>
               <tbody id="employeePortalApplicationsTableBody"></tbody>
             </table>
@@ -1395,6 +1429,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="script.js"></script>
   <script type="module" src="auth.js"></script>
   <script type="module" src="employees.js"></script>

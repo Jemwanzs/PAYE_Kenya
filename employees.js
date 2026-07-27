@@ -1,6 +1,6 @@
 import { supabase, callFunction } from './auth.js';
 
-const { earningComponents, irregularComponentIds, toNumber, money, rawMoney } = window.PayrollShared;
+const { earningComponents, irregularComponentIds, classificationLabels, toNumber, money, rawMoney } = window.PayrollShared;
 
 const employeeTypeLabels = {
   primary: 'Primary',
@@ -22,6 +22,7 @@ const bulkUploadCloseBtn = document.getElementById('bulkUploadCloseBtn');
 const bulkUploadCancelBtn = document.getElementById('bulkUploadCancelBtn');
 const bulkUploadTemplateBtn = document.getElementById('bulkUploadTemplateBtn');
 const bulkUploadFile = document.getElementById('bulkUploadFile');
+const bulkUploadFilename = document.getElementById('bulkUploadFilename');
 const bulkUploadImportBtn = document.getElementById('bulkUploadImportBtn');
 const bulkUploadError = document.getElementById('bulkUploadError');
 const bulkUploadInfo = document.getElementById('bulkUploadInfo');
@@ -716,11 +717,17 @@ const BULK_UPLOAD_HEADERS = [
   'Contract start date (YYYY-MM-DD)', 'Basic pay'
 ];
 
-const VALID_EMPLOYEE_TYPES = ['primary', 'secondary', 'contractor', 'pwd'];
-const VALID_GENDERS = ['male', 'female', 'other'];
+const BULK_UPLOAD_GENDER_OPTIONS = ['Male', 'Female', 'Others'];
+const BULK_UPLOAD_GENDER_MAP = { male: 'male', female: 'female', others: 'other', other: 'other' };
+const BULK_UPLOAD_EMPLOYEE_TYPE_OPTIONS = Object.keys(classificationLabels).map(key => classificationLabels[key]);
+const BULK_UPLOAD_EMPLOYEE_TYPE_MAP = Object.fromEntries(
+  Object.entries(classificationLabels).map(([key, label]) => [label.toLowerCase(), key])
+);
+const VALID_EMPLOYEE_TYPES = Object.keys(classificationLabels);
 
 function openBulkUploadModal() {
   bulkUploadFile.value = '';
+  bulkUploadFilename.textContent = 'No file chosen';
   bulkUploadError.hidden = true;
   bulkUploadInfo.hidden = true;
   bulkUploadResults.hidden = true;
@@ -730,18 +737,81 @@ function openBulkUploadModal() {
 
 function closeBulkUploadModal() { bulkUploadOverlay.hidden = true; }
 
+bulkUploadFile.addEventListener('change', () => {
+  bulkUploadFilename.textContent = bulkUploadFile.files?.[0]?.name || 'No file chosen';
+});
+
 bulkUploadEmployeesBtn.addEventListener('click', openBulkUploadModal);
 bulkUploadCloseBtn.addEventListener('click', closeBulkUploadModal);
 bulkUploadCancelBtn.addEventListener('click', closeBulkUploadModal);
 
-bulkUploadTemplateBtn.addEventListener('click', () => {
-  const sheet = XLSX.utils.aoa_to_sheet([
-    BULK_UPLOAD_HEADERS,
-    ['Jane', 'Wanjiru', 'jane@example.com', '0712345678', 'female', 'Accountant', 'Finance', '', 'primary', '2026-01-01', '80000']
-  ]);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, sheet, 'Employees');
-  XLSX.writeFile(workbook, 'employee-bulk-upload-template.xlsx');
+// Uses ExcelJS (not the xlsx/SheetJS library used for reading the filled-in
+// template back in below) purely because SheetJS's free tier can't write
+// real dropdown data validation into a workbook -- ExcelJS can. The option
+// lists live on a second, hidden sheet, referenced by range rather than
+// inlined into the validation formula, since department/job-position names
+// are free text that could contain commas or run past Excel's ~255-char
+// inline-list limit.
+bulkUploadTemplateBtn.addEventListener('click', async () => {
+  bulkUploadError.hidden = true;
+  bulkUploadTemplateBtn.disabled = true;
+  try {
+    const settings = await loadSettings();
+    const jobPositions = settings.job_positions || [];
+    const departments = settings.departments || [];
+    const subDepartments = settings.sub_departments || [];
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Employees');
+    sheet.columns = BULK_UPLOAD_HEADERS.map(header => ({ header, width: Math.max(16, header.length + 2) }));
+    sheet.addRow(['Jane', 'Wanjiru', 'jane@example.com', '0712345678', 'Female', jobPositions[0] || 'Accountant', departments[0] || 'Finance', '', 'Primary Employee', '2026-01-01', 80000]);
+
+    const lists = workbook.addWorksheet('Lists', { state: 'hidden' });
+    const listColumns = [
+      { col: 'A', values: BULK_UPLOAD_GENDER_OPTIONS },
+      { col: 'B', values: BULK_UPLOAD_EMPLOYEE_TYPE_OPTIONS },
+      { col: 'C', values: jobPositions },
+      { col: 'D', values: departments },
+      { col: 'E', values: subDepartments }
+    ];
+    listColumns.forEach(({ col, values }) => {
+      values.forEach((value, i) => { lists.getCell(`${col}${i + 1}`).value = value; });
+    });
+
+    const dropdownColumns = [
+      { col: 'E', listCol: 'A', values: BULK_UPLOAD_GENDER_OPTIONS },
+      { col: 'F', listCol: 'C', values: jobPositions },
+      { col: 'G', listCol: 'D', values: departments },
+      { col: 'H', listCol: 'E', values: subDepartments },
+      { col: 'I', listCol: 'B', values: BULK_UPLOAD_EMPLOYEE_TYPE_OPTIONS }
+    ];
+    for (let row = 2; row <= 300; row += 1) {
+      dropdownColumns.forEach(({ col, listCol, values }) => {
+        if (!values.length) return;
+        sheet.getCell(`${col}${row}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [`Lists!$${listCol}$1:$${listCol}$${values.length}`]
+        };
+      });
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'employee-bulk-upload-template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    bulkUploadError.textContent = err.message || 'Could not build the template.';
+    bulkUploadError.hidden = false;
+  } finally {
+    bulkUploadTemplateBtn.disabled = false;
+  }
 });
 
 // Excel date cells arrive as JS Date objects (via cellDates:true) built at
@@ -766,11 +836,16 @@ function bulkUploadRowToPayload(row) {
   const lastName = String(row['Last name'] || '').trim();
   if (!firstName || !lastName) return { error: 'First and last name are required.' };
 
+  // Accepts either the dropdown's display label ("Primary Employee",
+  // "Others") or a raw value typed directly (backward-compatible with
+  // templates downloaded before dropdowns existed).
   const typeRaw = String(row['Employee type'] || '').trim().toLowerCase();
-  const employeeType = VALID_EMPLOYEE_TYPES.includes(typeRaw) ? typeRaw : 'primary';
+  const employeeType = VALID_EMPLOYEE_TYPES.includes(typeRaw)
+    ? typeRaw
+    : (BULK_UPLOAD_EMPLOYEE_TYPE_MAP[typeRaw] || 'primary');
 
   const genderRaw = String(row['Gender'] || '').trim().toLowerCase();
-  const gender = VALID_GENDERS.includes(genderRaw) ? genderRaw : null;
+  const gender = BULK_UPLOAD_GENDER_MAP[genderRaw] || null;
 
   const compensation = {
     basicPay: toNumber(row['Basic pay']),

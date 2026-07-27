@@ -8,9 +8,13 @@ import {
 
 const { classificationLabels, money } = window.PayrollShared;
 
+const payslipsError = document.getElementById('employeePortalPayslipsError');
 const payslipsEmpty = document.getElementById('employeePortalPayslipsEmpty');
 const payslipsTableBody = document.getElementById('employeePortalPayslipsTableBody');
+const payslipsRefreshBtn = document.getElementById('employeePortalPayslipsRefreshBtn');
 const detailsGrid = document.getElementById('employeePortalDetailsGrid');
+const leaveError = document.getElementById('employeePortalLeaveError');
+const leaveRefreshBtn = document.getElementById('employeePortalLeaveRefreshBtn');
 const leaveBalances = document.getElementById('employeePortalLeaveBalances');
 const applyForm = document.getElementById('employeePortalApplyForm');
 const applyType = document.getElementById('employeePortalApplyType');
@@ -24,11 +28,9 @@ const applicationsEmpty = document.getElementById('employeePortalApplicationsEmp
 const applicationsTableBody = document.getElementById('employeePortalApplicationsTableBody');
 
 let currentEmployee = null;
-let leaveDataLoaded = false;
 
 document.addEventListener('employee-portal:ready', event => {
   currentEmployee = event.detail.employee;
-  leaveDataLoaded = false;
   renderDetails(currentEmployee);
   renderPayslips();
 });
@@ -61,26 +63,39 @@ function renderDetails(employee) {
 }
 
 async function renderPayslips() {
-  const { data: payslips } = await supabase.from('payslips').select('*').order('created_at', { ascending: false });
-  const rows = payslips || [];
+  payslipsError.hidden = true;
+  payslipsRefreshBtn.disabled = true;
+  try {
+    const { data: payslips, error } = await supabase.from('payslips').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    const rows = payslips || [];
 
-  const runIds = [...new Set(rows.map(p => p.payroll_run_id))];
-  const { data: runs } = runIds.length
-    ? await supabase.from('payroll_runs').select('id, period_label').in('id', runIds)
-    : { data: [] };
-  const runById = new Map((runs || []).map(r => [r.id, r]));
-  rows.forEach(p => { p.period_label = runById.get(p.payroll_run_id)?.period_label || ''; });
+    const runIds = [...new Set(rows.map(p => p.payroll_run_id))];
+    if (runIds.length) {
+      const { data: runs, error: runsError } = await supabase.from('payroll_runs').select('id, period_label').in('id', runIds);
+      if (runsError) throw runsError;
+      const runById = new Map((runs || []).map(r => [r.id, r]));
+      rows.forEach(p => { p.period_label = runById.get(p.payroll_run_id)?.period_label || ''; });
+    }
 
-  payslipsEmpty.hidden = rows.length > 0;
-  payslipsTableBody.innerHTML = rows.map(p => `
-    <tr>
-      <td>${p.period_label || '—'}</td>
-      <td>${money(p.results?.netPay || 0)}</td>
-      <td><button type="button" class="ghost-button employee-portal-payslip-btn" data-id="${p.id}">View / Print</button></td>
-    </tr>
-  `).join('');
-  payslipsTableBody.dataset.payslips = JSON.stringify(rows);
+    payslipsEmpty.hidden = rows.length > 0;
+    payslipsTableBody.innerHTML = rows.map(p => `
+      <tr>
+        <td>${p.period_label || '—'}</td>
+        <td>${money(p.results?.netPay || 0)}</td>
+        <td><button type="button" class="ghost-button employee-portal-payslip-btn" data-id="${p.id}">View / Print</button></td>
+      </tr>
+    `).join('');
+    payslipsTableBody.dataset.payslips = JSON.stringify(rows);
+  } catch (err) {
+    payslipsError.textContent = err.message || 'Could not load your payslips.';
+    payslipsError.hidden = false;
+  } finally {
+    payslipsRefreshBtn.disabled = false;
+  }
 }
+
+payslipsRefreshBtn.addEventListener('click', renderPayslips);
 
 payslipsTableBody.addEventListener('click', event => {
   const btn = event.target.closest('.employee-portal-payslip-btn');
@@ -91,25 +106,37 @@ payslipsTableBody.addEventListener('click', event => {
 });
 
 async function renderLeaveTab() {
-  if (!leaveDataLoaded) {
+  leaveError.hidden = true;
+  leaveRefreshBtn.disabled = true;
+  try {
     await loadCoreLeaveData({ force: true });
-    leaveDataLoaded = true;
+
+    // RLS scopes employeesCache to just this employee's own row.
+    const employee = employeesCache[0];
+    if (!employee) {
+      leaveError.textContent = 'Could not load your leave data. Try refreshing, or contact your employer.';
+      leaveError.hidden = false;
+      return;
+    }
+
+    const asOf = todayStr();
+    leaveBalances.innerHTML = leaveTypesCache.map(t => {
+      const b = computeLeaveBalanceBreakdown(employee, t, asOf);
+      return `<div><span>${t.name}</span><strong>${b.balance.toFixed(2)} day(s)</strong></div>`;
+    }).join('');
+
+    applyType.innerHTML = leaveTypesCache.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    updateApplyPreview();
+    renderApplications(employee);
+  } catch (err) {
+    leaveError.textContent = err.message || 'Could not load your leave data.';
+    leaveError.hidden = false;
+  } finally {
+    leaveRefreshBtn.disabled = false;
   }
-
-  // RLS scopes employeesCache to just this employee's own row.
-  const employee = employeesCache[0];
-  if (!employee) return;
-
-  const asOf = todayStr();
-  leaveBalances.innerHTML = leaveTypesCache.map(t => {
-    const b = computeLeaveBalanceBreakdown(employee, t, asOf);
-    return `<div><span>${t.name}</span><strong>${b.balance.toFixed(2)} day(s)</strong></div>`;
-  }).join('');
-
-  applyType.innerHTML = leaveTypesCache.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-  updateApplyPreview();
-  renderApplications(employee);
 }
+
+leaveRefreshBtn.addEventListener('click', renderLeaveTab);
 
 function renderApplications(employee) {
   const rows = applicationsCache
