@@ -37,14 +37,21 @@ const approvalsError = document.getElementById('employeePortalApprovalsError');
 const approvalsEmpty = document.getElementById('employeePortalApprovalsEmpty');
 const approvalsList = document.getElementById('employeePortalApprovalsList');
 const approvalsRefreshBtn = document.getElementById('employeePortalApprovalsRefreshBtn');
+const leaveApprovalsSection = document.getElementById('employeePortalLeaveApprovalsSection');
+const leaveApprovalsError = document.getElementById('employeePortalLeaveApprovalsError');
+const leaveApprovalsEmpty = document.getElementById('employeePortalLeaveApprovalsEmpty');
+const leaveApprovalsList = document.getElementById('employeePortalLeaveApprovalsList');
+const leaveApprovalsRefreshBtn = document.getElementById('employeePortalLeaveApprovalsRefreshBtn');
 
 let currentEmployee = null;
+let isLeaveApprover = false;
+let isPayrollApprover = false;
 
 document.addEventListener('employee-portal:ready', event => {
   currentEmployee = event.detail.employee;
   renderDetails(currentEmployee);
   renderPayslips();
-  checkIsApprover();
+  checkApproverRoles();
   loadNotifications();
 });
 
@@ -142,6 +149,7 @@ async function renderLeaveTab() {
     applyType.innerHTML = leaveTypesCache.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
     updateApplyPreview();
     renderApplications(employee);
+    if (isLeaveApprover) renderLeaveApprovals();
   } catch (err) {
     leaveError.textContent = err.message || 'Could not load your leave data.';
     leaveError.hidden = false;
@@ -241,16 +249,32 @@ applyForm.addEventListener('submit', async event => {
 });
 
 // ---------------------------------------------------------------------
-// Approvals tab + notification inbox -- only relevant to the (usually
-// small) subset of employees the owner has appointed as approvers in
-// Settings > Approval workflows. Simple in-app inbox, populated on
-// portal load and on demand -- no realtime/websocket infrastructure.
+// Approvals + notification inbox -- only relevant to the (usually small)
+// subset of employees the owner has appointed as approvers in Settings >
+// Approval workflows. Payroll approvals live in their own standalone
+// portal tab (there's no "Payroll" tab in the portal for them to sit
+// inside); leave approvals surface as a "For my approval" section right
+// inside the Leave tab, next to everything else leave-related. Simple
+// in-app inbox, populated on portal load and on demand -- no
+// realtime/websocket infrastructure.
 // ---------------------------------------------------------------------
 
-async function checkIsApprover() {
+async function checkApproverRoles() {
   if (!currentEmployee) return;
-  const { data } = await supabase.from('approval_workflow_approvers').select('id').eq('employee_id', currentEmployee.id).limit(1);
-  approvalsNavBtn.hidden = !data?.length;
+  const { data: approverRows } = await supabase.from('approval_workflow_approvers').select('workflow_id').eq('employee_id', currentEmployee.id);
+  const workflowIds = [...new Set((approverRows || []).map(r => r.workflow_id))];
+
+  let actionTypes = [];
+  if (workflowIds.length) {
+    const { data: workflows } = await supabase.from('approval_workflows').select('id, action_type').in('id', workflowIds);
+    actionTypes = (workflows || []).map(w => w.action_type);
+  }
+
+  isPayrollApprover = actionTypes.includes('payroll_run');
+  isLeaveApprover = actionTypes.includes('leave_application');
+  approvalsNavBtn.hidden = !isPayrollApprover;
+  leaveApprovalsSection.hidden = !isLeaveApprover;
+  if (isLeaveApprover) renderLeaveApprovals();
 }
 
 async function loadNotifications() {
@@ -260,7 +284,7 @@ async function loadNotifications() {
   notifyCount.textContent = String(rows.length);
   notifyEmpty.hidden = rows.length > 0;
   notifyList.innerHTML = rows.map(n => `
-    <button type="button" class="notification-item" data-id="${n.id}">
+    <button type="button" class="notification-item" data-id="${n.id}" data-link-type="${n.link_type || ''}">
       ${n.title}
       <small>${new Date(n.created_at).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</small>
     </button>
@@ -288,69 +312,73 @@ notifyList.addEventListener('click', async event => {
   closeNotifyMenu();
   await supabase.from('notifications').update({ is_read: true }).eq('id', btn.dataset.id);
   await loadNotifications();
-  document.querySelector('[data-portal-page="approvals"]')?.click();
+  // Leave approvals live inside the Leave tab's "For my approval"
+  // section; payroll approvals live in their own standalone tab.
+  const targetPage = btn.dataset.linkType === 'leave_application' ? 'leave' : 'approvals';
+  document.querySelector(`[data-portal-page="${targetPage}"]`)?.click();
 });
 
-approvalsRefreshBtn.addEventListener('click', renderApprovalsTab);
+// Shared by both the payroll-only Approvals tab and the leave-only "For
+// my approval" section -- takes already-fetched-and-filtered
+// approval_actions rows and builds the same card markup for either.
+async function buildApprovalItemsHtml(rows) {
+  if (!rows.length) return '';
+
+  const payrollIds = rows.filter(a => a.action_type === 'payroll_run').map(a => a.record_id);
+  const leaveIds = rows.filter(a => a.action_type === 'leave_application').map(a => a.record_id);
+
+  const [runsRes, appsRes] = await Promise.all([
+    payrollIds.length ? supabase.from('payroll_runs').select('id, period_label').in('id', payrollIds) : { data: [] },
+    leaveIds.length ? supabase.from('leave_applications').select('id, employee_id, leave_type_id, start_date, end_date, days_requested').in('id', leaveIds) : { data: [] }
+  ]);
+  const runById = new Map((runsRes.data || []).map(r => [r.id, r]));
+  const apps = appsRes.data || [];
+
+  const employeeIds = [...new Set(apps.map(a => a.employee_id))];
+  const leaveTypeIds = [...new Set(apps.map(a => a.leave_type_id))];
+  const [employeesRes, typesRes] = await Promise.all([
+    employeeIds.length ? supabase.from('employees').select('id, first_name, last_name').in('id', employeeIds) : { data: [] },
+    leaveTypeIds.length ? supabase.from('leave_types').select('id, name').in('id', leaveTypeIds) : { data: [] }
+  ]);
+  const employeeById = new Map((employeesRes.data || []).map(e => [e.id, e]));
+  const typeById = new Map((typesRes.data || []).map(t => [t.id, t]));
+  const appById = new Map(apps.map(a => [a.id, a]));
+
+  return rows.map(action => {
+    let summary = 'Record no longer available';
+    if (action.action_type === 'payroll_run') {
+      const run = runById.get(action.record_id);
+      summary = run ? `Payroll run: ${run.period_label}` : summary;
+    } else {
+      const app = appById.get(action.record_id);
+      if (app) {
+        const emp = employeeById.get(app.employee_id);
+        const type = typeById.get(app.leave_type_id);
+        summary = `Leave: ${emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'} — ${type ? type.name : 'Leave'}, ${app.start_date} to ${app.end_date} (${Number(app.days_requested).toFixed(2)} day(s))`;
+      }
+    }
+    return `
+      <div class="approval-item" data-action-id="${action.id}">
+        <p>${summary}</p>
+        <textarea placeholder="Comment (optional for approve, recommended for reject)" rows="2"></textarea>
+        <div class="auth-actions">
+          <button type="button" class="primary-button approval-approve-btn" data-id="${action.id}">Approve</button>
+          <button type="button" class="ghost-button approval-reject-btn" data-id="${action.id}">Reject</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
 
 async function renderApprovalsTab() {
   approvalsError.hidden = true;
   approvalsRefreshBtn.disabled = true;
   try {
-    const { data: actions, error } = await supabase.from('approval_actions').select('*').eq('decision', 'pending').order('created_at', { ascending: true });
+    const { data: actions, error } = await supabase.from('approval_actions').select('*').eq('decision', 'pending').eq('action_type', 'payroll_run').order('created_at', { ascending: true });
     if (error) throw error;
     const rows = actions || [];
-
     approvalsEmpty.hidden = rows.length > 0;
-    if (!rows.length) {
-      approvalsList.innerHTML = '';
-      return;
-    }
-
-    const payrollIds = rows.filter(a => a.action_type === 'payroll_run').map(a => a.record_id);
-    const leaveIds = rows.filter(a => a.action_type === 'leave_application').map(a => a.record_id);
-
-    const [runsRes, appsRes] = await Promise.all([
-      payrollIds.length ? supabase.from('payroll_runs').select('id, period_label').in('id', payrollIds) : { data: [] },
-      leaveIds.length ? supabase.from('leave_applications').select('id, employee_id, leave_type_id, start_date, end_date, days_requested').in('id', leaveIds) : { data: [] }
-    ]);
-    const runById = new Map((runsRes.data || []).map(r => [r.id, r]));
-    const apps = appsRes.data || [];
-
-    const employeeIds = [...new Set(apps.map(a => a.employee_id))];
-    const leaveTypeIds = [...new Set(apps.map(a => a.leave_type_id))];
-    const [employeesRes, typesRes] = await Promise.all([
-      employeeIds.length ? supabase.from('employees').select('id, first_name, last_name').in('id', employeeIds) : { data: [] },
-      leaveTypeIds.length ? supabase.from('leave_types').select('id, name').in('id', leaveTypeIds) : { data: [] }
-    ]);
-    const employeeById = new Map((employeesRes.data || []).map(e => [e.id, e]));
-    const typeById = new Map((typesRes.data || []).map(t => [t.id, t]));
-    const appById = new Map(apps.map(a => [a.id, a]));
-
-    approvalsList.innerHTML = rows.map(action => {
-      let summary = 'Record no longer available';
-      if (action.action_type === 'payroll_run') {
-        const run = runById.get(action.record_id);
-        summary = run ? `Payroll run: ${run.period_label}` : summary;
-      } else {
-        const app = appById.get(action.record_id);
-        if (app) {
-          const emp = employeeById.get(app.employee_id);
-          const type = typeById.get(app.leave_type_id);
-          summary = `Leave: ${emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'} — ${type ? type.name : 'Leave'}, ${app.start_date} to ${app.end_date} (${Number(app.days_requested).toFixed(2)} day(s))`;
-        }
-      }
-      return `
-        <div class="approval-item" data-action-id="${action.id}">
-          <p>${summary}</p>
-          <textarea placeholder="Comment (optional for approve, recommended for reject)" rows="2"></textarea>
-          <div class="auth-actions">
-            <button type="button" class="primary-button approval-approve-btn" data-id="${action.id}">Approve</button>
-            <button type="button" class="ghost-button approval-reject-btn" data-id="${action.id}">Reject</button>
-          </div>
-        </div>
-      `;
-    }).join('');
+    approvalsList.innerHTML = await buildApprovalItemsHtml(rows);
   } catch (err) {
     approvalsError.textContent = err.message || 'Could not load approvals.';
     approvalsError.hidden = false;
@@ -359,26 +387,51 @@ async function renderApprovalsTab() {
   }
 }
 
-approvalsList.addEventListener('click', async event => {
-  const btn = event.target.closest('.approval-approve-btn, .approval-reject-btn');
-  if (!btn) return;
-  const item = btn.closest('.approval-item');
-  const comment = item.querySelector('textarea').value.trim() || null;
-  const decision = btn.classList.contains('approval-approve-btn') ? 'approved' : 'rejected';
-
-  approvalsError.hidden = true;
-  item.querySelectorAll('button').forEach(b => { b.disabled = true; });
+async function renderLeaveApprovals() {
+  leaveApprovalsError.hidden = true;
+  leaveApprovalsRefreshBtn.disabled = true;
   try {
-    const { error } = await supabase.rpc('record_approval_decision', {
-      p_action_id: btn.dataset.id,
-      p_decision: decision,
-      p_comment: comment
-    });
+    const { data: actions, error } = await supabase.from('approval_actions').select('*').eq('decision', 'pending').eq('action_type', 'leave_application').order('created_at', { ascending: true });
     if (error) throw error;
-    await renderApprovalsTab();
+    const rows = actions || [];
+    leaveApprovalsEmpty.hidden = rows.length > 0;
+    leaveApprovalsList.innerHTML = await buildApprovalItemsHtml(rows);
   } catch (err) {
-    approvalsError.textContent = err.message || 'Could not record your decision.';
-    approvalsError.hidden = false;
-    item.querySelectorAll('button').forEach(b => { b.disabled = false; });
+    leaveApprovalsError.textContent = err.message || 'Could not load approvals.';
+    leaveApprovalsError.hidden = false;
+  } finally {
+    leaveApprovalsRefreshBtn.disabled = false;
   }
-});
+}
+
+approvalsRefreshBtn.addEventListener('click', renderApprovalsTab);
+leaveApprovalsRefreshBtn.addEventListener('click', renderLeaveApprovals);
+
+function wireApprovalDecisions(container, errorEl, onDecided) {
+  container.addEventListener('click', async event => {
+    const btn = event.target.closest('.approval-approve-btn, .approval-reject-btn');
+    if (!btn) return;
+    const item = btn.closest('.approval-item');
+    const comment = item.querySelector('textarea').value.trim() || null;
+    const decision = btn.classList.contains('approval-approve-btn') ? 'approved' : 'rejected';
+
+    errorEl.hidden = true;
+    item.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    try {
+      const { error } = await supabase.rpc('record_approval_decision', {
+        p_action_id: btn.dataset.id,
+        p_decision: decision,
+        p_comment: comment
+      });
+      if (error) throw error;
+      await onDecided();
+    } catch (err) {
+      errorEl.textContent = err.message || 'Could not record your decision.';
+      errorEl.hidden = false;
+      item.querySelectorAll('button').forEach(b => { b.disabled = false; });
+    }
+  });
+}
+
+wireApprovalDecisions(approvalsList, approvalsError, renderApprovalsTab);
+wireApprovalDecisions(leaveApprovalsList, leaveApprovalsError, renderLeaveApprovals);

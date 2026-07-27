@@ -518,6 +518,27 @@ create policy "manage_own_approval_workflow_approvers"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+-- Lets an approver's own portal session discover their appointment(s) and
+-- which action type each governs -- without this, checkIsApprover()-style
+-- client checks always see zero rows for a real employee session. The
+-- approval_workflows policy below routes through this table only in one
+-- direction (workflows -> approvers -> employees); this policy never
+-- references approval_workflows back, so it stays a one-way lookup.
+create policy "approver_read_own_workflow_approver_rows"
+  on public.approval_workflow_approvers for select
+  to authenticated
+  using (employee_id in (select id from public.employees where auth_user_id = auth.uid() and status <> 'terminated'));
+
+create policy "approver_read_relevant_workflows"
+  on public.approval_workflows for select
+  to authenticated
+  using (
+    id in (
+      select workflow_id from public.approval_workflow_approvers
+      where employee_id in (select id from public.employees where auth_user_id = auth.uid() and status <> 'terminated')
+    )
+  );
+
 create table public.approval_actions (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users(id) on delete cascade,
