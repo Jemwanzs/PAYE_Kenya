@@ -172,6 +172,19 @@ h1 {
 .primary-button:focus-visible,
 .ghost-button:focus-visible { outline: 3px solid rgba(242, 140, 24, .5); outline-offset: 2px; }
 
+/* Grayed-out "nothing to save" state, distinct from the loading/in-flight
+   disabled state (both use the disabled attribute, but visually this
+   should read as "unchanged" rather than "busy"). */
+.primary-button:disabled,
+.primary-button:disabled:hover,
+.primary-button:disabled:active {
+  background: var(--line);
+  color: var(--muted);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .layout-grid {
   display: grid;
   grid-template-columns: minmax(360px, 1fr) minmax(440px, 1.1fr);

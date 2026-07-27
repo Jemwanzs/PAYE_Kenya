@@ -1322,7 +1322,41 @@ async function loadApprovalWorkflows() {
   };
   renderChecklist(approvalWorkflowPayrollApprovers, payrollApproverIds);
   renderChecklist(approvalWorkflowLeaveApprovers, leaveApproverIds);
+
+  markApprovalWorkflowClean();
 }
+
+// Dirty-state tracking for the save button -- bright/enabled the moment
+// anything differs from what's actually persisted, grayed/disabled once
+// it matches again (right after load or right after a successful save).
+// Without this, a save that silently no-ops (e.g. nothing actually
+// changed) looks identical to one that worked, so there was no way to
+// tell at a glance whether the on-screen configuration was really saved.
+let approvalWorkflowCleanSnapshot = '';
+
+function computeApprovalWorkflowSnapshot() {
+  const checkedIds = container => [...container.querySelectorAll('input[type="checkbox"]:checked')].map(cb => cb.value).sort().join(',');
+  return JSON.stringify({
+    payrollActive: approvalWorkflowPayrollActive.checked,
+    payrollApprovers: checkedIds(approvalWorkflowPayrollApprovers),
+    leaveActive: approvalWorkflowLeaveActive.checked,
+    leaveApprovers: checkedIds(approvalWorkflowLeaveApprovers),
+  });
+}
+
+function markApprovalWorkflowClean() {
+  approvalWorkflowCleanSnapshot = computeApprovalWorkflowSnapshot();
+  approvalWorkflowSaveBtn.disabled = true;
+}
+
+function refreshApprovalWorkflowDirtyState() {
+  approvalWorkflowSaveBtn.disabled = computeApprovalWorkflowSnapshot() === approvalWorkflowCleanSnapshot;
+}
+
+approvalWorkflowPayrollActive.addEventListener('change', refreshApprovalWorkflowDirtyState);
+approvalWorkflowLeaveActive.addEventListener('change', refreshApprovalWorkflowDirtyState);
+approvalWorkflowPayrollApprovers.addEventListener('change', refreshApprovalWorkflowDirtyState);
+approvalWorkflowLeaveApprovers.addEventListener('change', refreshApprovalWorkflowDirtyState);
 
 async function saveApprovalWorkflow(actionType, isActive, container, ownerId) {
   const approverIds = [...container.querySelectorAll('input[type="checkbox"]:checked')].map(cb => cb.value);
@@ -1355,11 +1389,13 @@ approvalWorkflowSaveBtn.addEventListener('click', async () => {
     await saveApprovalWorkflow('leave_application', approvalWorkflowLeaveActive.checked, approvalWorkflowLeaveApprovers, user.id);
     approvalWorkflowInfo.textContent = 'Approval workflows saved.';
     approvalWorkflowInfo.hidden = false;
+    // Reload from the database (not just re-mark the current form clean)
+    // so the button's clean state reflects what's actually persisted,
+    // not just what was submitted.
     await loadApprovalWorkflows();
   } catch (err) {
     approvalWorkflowError.textContent = err.message || 'Could not save approval workflows.';
     approvalWorkflowError.hidden = false;
-  } finally {
     approvalWorkflowSaveBtn.disabled = false;
   }
 });
