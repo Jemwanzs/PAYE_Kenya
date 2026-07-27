@@ -1130,54 +1130,6 @@
       </div>
     </div>
 
-    <div id="leaveBalancePrintWrap" hidden></div>
-
-    <div id="musterRollPrintWrap" hidden></div>
-
-    <div id="payslipPrintWrap" hidden>
-      <div class="payslip-print-header">
-        <img id="payslipPrintLogo" class="payslip-print-logo" alt="" hidden />
-        <p class="payslip-print-business-name" id="payslipPrintBusinessName" hidden></p>
-      </div>
-      <div class="hero-card">
-        <div>
-          <p class="eyebrow"><span class="eyebrow-dot"></span>Payslip</p>
-          <h1 id="payslipPrintTitle">Employee — Period</h1>
-          <p class="payslip-print-line" id="payslipPrintSubtitle"></p>
-          <p class="payslip-print-line" id="payslipPrintEmployeeNumber"></p>
-        </div>
-      </div>
-      <div class="results-panel">
-        <div class="net-card">
-          <span>Net pay</span>
-          <strong id="payslipPrintNetPay">KES 0.00</strong>
-          <small id="payslipPrintRate"></small>
-        </div>
-        <div class="summary-cards">
-          <div><span>Gross pay</span><strong id="payslipPrintGross">KES 0.00</strong></div>
-          <div><span>Taxable pay</span><strong id="payslipPrintTaxable">KES 0.00</strong></div>
-          <div><span>PAYE / WHT</span><strong id="payslipPrintPaye">KES 0.00</strong></div>
-          <div><span>Total deductions</span><strong id="payslipPrintTotalDeductions">KES 0.00</strong></div>
-        </div>
-        <div class="breakdown-card breakdown-computation">
-          <h2>Computation breakdown</h2>
-          <div class="breakdown-columns">
-            <div class="breakdown-col"><h3>Earnings</h3><div id="payslipPrintEarnings"></div></div>
-            <div class="breakdown-col"><h3>Deductions</h3><div id="payslipPrintDeductions"></div></div>
-          </div>
-          <div class="breakdown-net" id="payslipPrintNetRow"></div>
-        </div>
-        <div class="breakdown-card employer-card">
-          <h2>Employer contributions</h2>
-          <div id="payslipPrintEmployerRows"></div>
-        </div>
-      </div>
-      <div class="payslip-print-footer">
-        <span id="payslipPrintDate"></span>
-        <span>This is system generated</span>
-      </div>
-    </div>
-
     <section class="settings-page" id="settingsPage" hidden>
       <div class="employees-form">
         <div class="panel-header">
@@ -1337,6 +1289,60 @@
       </div>
     </section>
   </main>
+
+  <!-- Top-level siblings of both shells, not nested inside either --
+       printPayslip() is shared by the owner and the employee portal, and
+       an owner-only feature living inside #ownerAppShell would go blank
+       whenever that shell is [hidden] (i.e. whenever an employee portal
+       session is what's actually on screen), since a hidden ancestor
+       still hides a visible descendant. -->
+  <div id="leaveBalancePrintWrap" hidden></div>
+
+  <div id="musterRollPrintWrap" hidden></div>
+
+  <div id="payslipPrintWrap" hidden>
+    <div class="payslip-print-header">
+      <img id="payslipPrintLogo" class="payslip-print-logo" alt="" hidden />
+      <p class="payslip-print-business-name" id="payslipPrintBusinessName" hidden></p>
+    </div>
+    <div class="hero-card">
+      <div>
+        <p class="eyebrow"><span class="eyebrow-dot"></span>Payslip</p>
+        <h1 id="payslipPrintTitle">Employee — Period</h1>
+        <p class="payslip-print-line" id="payslipPrintSubtitle"></p>
+        <p class="payslip-print-line" id="payslipPrintEmployeeNumber"></p>
+      </div>
+    </div>
+    <div class="results-panel">
+      <div class="net-card">
+        <span>Net pay</span>
+        <strong id="payslipPrintNetPay">KES 0.00</strong>
+        <small id="payslipPrintRate"></small>
+      </div>
+      <div class="summary-cards">
+        <div><span>Gross pay</span><strong id="payslipPrintGross">KES 0.00</strong></div>
+        <div><span>Taxable pay</span><strong id="payslipPrintTaxable">KES 0.00</strong></div>
+        <div><span>PAYE / WHT</span><strong id="payslipPrintPaye">KES 0.00</strong></div>
+        <div><span>Total deductions</span><strong id="payslipPrintTotalDeductions">KES 0.00</strong></div>
+      </div>
+      <div class="breakdown-card breakdown-computation">
+        <h2>Computation breakdown</h2>
+        <div class="breakdown-columns">
+          <div class="breakdown-col"><h3>Earnings</h3><div id="payslipPrintEarnings"></div></div>
+          <div class="breakdown-col"><h3>Deductions</h3><div id="payslipPrintDeductions"></div></div>
+        </div>
+        <div class="breakdown-net" id="payslipPrintNetRow"></div>
+      </div>
+      <div class="breakdown-card employer-card">
+        <h2>Employer contributions</h2>
+        <div id="payslipPrintEmployerRows"></div>
+      </div>
+    </div>
+    <div class="payslip-print-footer">
+      <span id="payslipPrintDate"></span>
+      <span>This is system generated</span>
+    </div>
+  </div>
 
   <main class="app-shell" id="employeePortalShell" hidden>
     <section class="hero-card">
