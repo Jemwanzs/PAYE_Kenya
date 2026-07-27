@@ -281,6 +281,37 @@ async function checkApproverRoles() {
   isLeaveApprover = actionTypes.includes('leave_application');
   approvalsNavBtn.hidden = !isPayrollApprover;
   leaveApprovalsNavBtn.hidden = !isLeaveApprover;
+  await refreshApprovalBadges();
+}
+
+function setNavBadge(btn, count) {
+  let badge = btn.querySelector('.nav-badge');
+  if (!count) {
+    if (badge) badge.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'nav-badge';
+    btn.appendChild(badge);
+  }
+  badge.textContent = count > 99 ? '99+' : String(count);
+}
+
+// The notification bell only reflects *unread* notifications -- it
+// clears the moment a tab is opened, whether or not anything was
+// actually decided. These badges instead reflect the true, persistent
+// pending count straight from approval_actions, so an approver can't
+// lose track of outstanding work just because they've already looked at
+// it once. Refreshed whenever roles are (re)checked and after every
+// tab render (covers both "just opened the tab" and "just decided
+// something", since both paths call render*Tab()).
+async function refreshApprovalBadges() {
+  if (!isPayrollApprover && !isLeaveApprover) return;
+  const { data } = await supabase.from('approval_actions').select('action_type').eq('decision', 'pending');
+  const rows = data || [];
+  setNavBadge(approvalsNavBtn, rows.filter(r => r.action_type === 'payroll_run').length);
+  setNavBadge(leaveApprovalsNavBtn, rows.filter(r => r.action_type === 'leave_application').length);
 }
 
 async function loadNotifications() {
@@ -412,6 +443,7 @@ async function renderApprovalsTab() {
     const rows = actions || [];
     approvalsEmpty.hidden = rows.length > 0;
     approvalsList.innerHTML = await buildApprovalItemsHtml(rows);
+    await refreshApprovalBadges();
   } catch (err) {
     approvalsError.textContent = err.message || 'Could not load approvals.';
     approvalsError.hidden = false;
@@ -437,6 +469,7 @@ async function renderLeaveApprovalsTab() {
     });
     leaveApprovalsEmpty.hidden = rows.length > 0;
     leaveApprovalsList.innerHTML = await buildApprovalItemsHtml(rows);
+    await refreshApprovalBadges();
   } catch (err) {
     leaveApprovalsError.textContent = err.message || 'Could not load approvals.';
     leaveApprovalsError.hidden = false;

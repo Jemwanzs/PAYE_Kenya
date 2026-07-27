@@ -673,6 +673,21 @@ textarea {
 .admin-preview-menu button.is-exit { color: var(--brand-dark); border-top: 1px dashed var(--line); margin-top: 4px; padding-top: 10px; }
 
 .notification-bell-wrap { position: relative; }
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 800;
+}
+.app-nav-btn[aria-selected="true"] .nav-badge { background: var(--brand-dark); }
+
 .notification-count {
   position: absolute;
   top: -4px;
@@ -714,10 +729,11 @@ textarea {
   background: rgba(242, 140, 24, .08);
   cursor: pointer;
   font-size: .8rem;
-  color: #4b3428;
+  color: var(--brand-dark);
+  font-weight: 700;
 }
 .notification-item:last-child { margin-bottom: 0; }
-.notification-item.is-read { background: transparent; color: var(--muted); }
+.notification-item.is-read { background: transparent; color: var(--muted); font-weight: 400; }
 .notification-item small { display: block; color: var(--muted); font-size: .7rem; margin-top: 2px; }
 
 .approval-list { display: grid; gap: 8px; margin-top: 10px; }
@@ -1846,6 +1862,15 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
 .compact-table.employee-table { font-size: .8rem; }
 .compact-table.employee-table th { padding: 7px 10px; font-size: .66rem; }
 .compact-table.employee-table td { padding: 8px 10px; }
+
+/* Color consistency across the portal: the shared global rules for
+   `label` and `.employee-table td` use an ad-hoc hardcoded brown
+   (#4b3428) that doesn't quite match this app's actual text-color
+   tokens (--text/--brand-dark/--muted) -- scoped here rather than
+   changed globally, so the owner's own screens (which reuse the same
+   shared classes) are untouched. */
+#employeePortalShell label { color: var(--text); }
+#employeePortalShell .employee-table td { color: var(--text); }
 
 /* Leave balances printing: same trick as the muster roll, scoped to
    #leaveBalancePrintWrap; it reuses the .muster-* print styles above. */
