@@ -832,7 +832,7 @@ async function printPayslip(payslip) {
   // title/URL); .payslip-print-footer replicates that space from inside
   // the content instead, with our own date/time and credit line.
   const pageStyle = document.createElement('style');
-  pageStyle.textContent = '@page { size: A5 landscape; margin: 0; }';
+  pageStyle.textContent = '@page { size: A5 portrait; margin: 0; }';
   document.head.appendChild(pageStyle);
   const originalTitle = document.title;
   document.title = '';

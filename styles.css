@@ -1159,58 +1159,62 @@ textarea {
   .breakdown-net { margin-top: 0; padding-top: 0; border-top: 0; }
   .breakdown-net .result-row { padding: 3px 0; font-size: 10.5px; border-bottom: 0; }
 
-  /* Payslip print: A5 landscape (see printPayslip()'s injected @page
-     rule), earnings left / deductions right, employer contributions
-     recentered and shrunk below -- all scoped to body.printing-payslip so
-     none of this touches the calculator's own on-screen "Print summary". */
+  /* Payslip print: A5 portrait (see printPayslip()'s injected @page rule
+     -- portrait gives ~210mm of height to work with vs landscape's
+     ~148mm, which is what was causing the breakdown/employer-contributions
+     cards to spill onto a second page), earnings left / deductions right,
+     employer contributions recentered and shrunk below -- all scoped to
+     body.printing-payslip so none of this touches the calculator's own
+     on-screen "Print summary". */
   body.printing-payslip {
-    font-size: 9.5px;
+    font-size: 9px;
   }
 
   body.printing-payslip #payslipPrintWrap {
     position: relative;
-    min-height: 128mm;
-    padding: 8mm 10mm calc(8mm + 16px);
+    min-height: 192mm;
+    padding: 7mm 8mm calc(7mm + 16px);
     box-sizing: border-box;
   }
 
-  body.printing-payslip .payslip-print-header { margin-bottom: 6px; }
-  body.printing-payslip .payslip-print-logo { max-height: 34px; max-width: 110px; }
-  body.printing-payslip .payslip-print-business-name { font-size: 11px; }
-  body.printing-payslip .hero-card { margin-bottom: 8px; padding-bottom: 6px; }
-  body.printing-payslip .eyebrow { font-size: 8px; }
-  body.printing-payslip h1 { font-size: 15px; }
-  body.printing-payslip .payslip-print-line { font-size: 9px; }
+  body.printing-payslip .payslip-print-header { margin-bottom: 5px; }
+  body.printing-payslip .payslip-print-logo { max-height: 30px; max-width: 100px; }
+  body.printing-payslip .payslip-print-business-name { font-size: 10.5px; }
+  body.printing-payslip .hero-card { margin-bottom: 6px; padding-bottom: 5px; }
+  body.printing-payslip .eyebrow { font-size: 7.5px; }
+  body.printing-payslip h1 { font-size: 14px; }
+  body.printing-payslip .payslip-print-line { font-size: 8.5px; }
 
   body.printing-payslip .results-panel { display: block; }
-  body.printing-payslip .net-card { padding: 8px 12px; margin-bottom: 6px; }
-  body.printing-payslip .net-card strong { font-size: 18px; margin: 2px 0; }
-  body.printing-payslip .summary-cards { margin-bottom: 6px; }
-  body.printing-payslip .summary-cards div { padding: 6px 8px; }
-  body.printing-payslip .summary-cards strong { font-size: 11px; }
-  body.printing-payslip .breakdown-card { padding: 8px 10px; }
+  body.printing-payslip .net-card { padding: 7px 10px; margin-bottom: 5px; }
+  body.printing-payslip .net-card strong { font-size: 17px; margin: 2px 0; }
+  body.printing-payslip .summary-cards { margin-bottom: 5px; }
+  body.printing-payslip .summary-cards div { padding: 5px 6px; }
+  body.printing-payslip .summary-cards strong { font-size: 10px; }
+  body.printing-payslip .breakdown-card { padding: 7px 9px; break-inside: avoid; page-break-inside: avoid; }
 
-  body.printing-payslip .breakdown-columns { grid-template-columns: 1fr 1fr; gap: 0 14px; }
-  body.printing-payslip .breakdown-col h3 { display: block; font-size: 9.5px; margin-bottom: 4px; }
-  body.printing-payslip .breakdown-col + .breakdown-col { border-left: 1px solid var(--line); padding-left: 14px; }
+  body.printing-payslip .breakdown-columns { grid-template-columns: 1fr 1fr; gap: 0 10px; }
+  body.printing-payslip .breakdown-col h3 { display: block; font-size: 9px; margin-bottom: 3px; }
+  body.printing-payslip .breakdown-col + .breakdown-col { border-left: 1px solid var(--line); padding-left: 10px; }
+  body.printing-payslip .result-row { padding: 2px 0; font-size: 8.5px; gap: 6px; }
 
   body.printing-payslip .employer-card {
-    margin: 8px auto 0;
-    max-width: 62%;
+    margin: 6px auto 0;
+    max-width: 78%;
     text-align: center;
   }
-  body.printing-payslip .employer-card h2 { font-size: 9.5px; }
+  body.printing-payslip .employer-card h2 { font-size: 9px; }
   body.printing-payslip .employer-card .result-row { text-align: left; }
 
   body.printing-payslip .payslip-print-footer {
     position: absolute;
-    left: 10mm;
-    right: 10mm;
-    bottom: 8mm;
+    left: 8mm;
+    right: 8mm;
+    bottom: 6mm;
     display: flex;
     justify-content: space-between;
     gap: 10px;
-    font-size: 7.5px;
+    font-size: 7px;
     color: var(--muted);
   }
 }
