@@ -1,7 +1,7 @@
 import { supabase } from './auth.js';
 import { printPayslip } from './payroll.js';
 import {
-  loadCoreLeaveData, computeLeaveBalanceBreakdown, countWorkingDays, todayStr,
+  loadCoreLeaveData, computeLeaveBalanceBreakdown, countWorkingDays, findConflictingLeaveApplication, todayStr,
   derivedStatus, statusPillClass, statusLabel,
   employeesCache, leaveTypesCache, applicationsCache
 } from './leave.js';
@@ -210,6 +210,13 @@ applyForm.addEventListener('submit', async event => {
   }
   if (applyEnd.value < applyStart.value) {
     applyError.textContent = 'End date cannot be before start date.';
+    applyError.hidden = false;
+    return;
+  }
+  const conflict = findConflictingLeaveApplication(employee.id, applyStart.value, applyEnd.value);
+  if (conflict) {
+    const conflictType = leaveTypesCache.find(t => t.id === conflict.leave_type_id);
+    applyError.textContent = `You already have a ${conflict.status} ${conflictType ? conflictType.name : 'leave'} request covering ${conflict.start_date}${conflict.end_date !== conflict.start_date ? ` to ${conflict.end_date}` : ''}.`;
     applyError.hidden = false;
     return;
   }

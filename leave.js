@@ -9,7 +9,7 @@ const { toNumber } = window.PayrollShared;
 // it from an employee session naturally populates these caches with only
 // that employee's own rows, no extra filtering needed on either side.
 export {
-  loadCoreLeaveData, computeLeaveBalanceBreakdown, countWorkingDays, todayStr,
+  loadCoreLeaveData, computeLeaveBalanceBreakdown, countWorkingDays, findConflictingLeaveApplication, todayStr,
   derivedStatus, statusPillClass, statusLabel,
   employeesCache, leaveTypesCache, holidaysCache, applicationsCache, adjustmentsCache, settingsCache
 };
@@ -245,6 +245,32 @@ function iterateDates(startStr, endStr) {
 function countWorkingDays(startStr, endStr) {
   if (!startStr || !endStr || endStr < startStr) return 0;
   return iterateDates(startStr, endStr).filter(d => !isWeekend(d) && !isHoliday(d)).length;
+}
+
+// One employee can't be on two leaves at once, regardless of whether
+// they're the same leave type or different ones -- so this checks across
+// the employee's whole application history, not just within one type.
+// Only pending/approved applications count as an active claim on those
+// dates; a rejected one never blocks a new request. Two partial-day
+// requests on the exact same single date are only a real clash if their
+// time windows actually overlap -- a morning slot and an afternoon slot
+// on the same day are legitimately both fine.
+function findConflictingLeaveApplication(employeeId, startStr, endStr, { isPartial = false, partialStart = null, partialEnd = null, excludeAppId = null } = {}) {
+  return applicationsCache.find(app => {
+    if (app.employee_id !== employeeId) return false;
+    if (app.id === excludeAppId) return false;
+    if (app.status === 'rejected') return false;
+    if (app.start_date > endStr || app.end_date < startStr) return false;
+
+    const bothSingleDayPartial = isPartial && app.is_partial_day
+      && startStr === endStr && app.start_date === app.end_date && app.start_date === startStr;
+    if (bothSingleDayPartial) {
+      if (!partialStart || !partialEnd || !app.partial_start_time || !app.partial_end_time) return true;
+      return partialStart < app.partial_end_time && app.partial_start_time < partialEnd;
+    }
+
+    return true;
+  });
 }
 
 function employeeName(employee) {
@@ -825,6 +851,17 @@ leaveApplyView.addEventListener('submit', async event => {
   }
   if (!isPartial && leaveApplyEnd.value < leaveApplyStart.value) {
     leaveApplyError.textContent = 'End date must be on or after the start date.';
+    leaveApplyError.hidden = false;
+    return;
+  }
+  const conflict = findConflictingLeaveApplication(employee.id, leaveApplyStart.value, leaveApplyEnd.value, {
+    isPartial,
+    partialStart: isPartial ? leaveApplyHoursFrom.value : null,
+    partialEnd: isPartial ? leaveApplyHoursTo.value : null
+  });
+  if (conflict) {
+    const conflictType = leaveTypesCache.find(t => t.id === conflict.leave_type_id);
+    leaveApplyError.textContent = `${employeeName(employee)} already has a ${conflict.status} ${conflictType ? conflictType.name : 'leave'} request covering ${conflict.start_date}${conflict.end_date !== conflict.start_date ? ` to ${conflict.end_date}` : ''}.`;
     leaveApplyError.hidden = false;
     return;
   }
