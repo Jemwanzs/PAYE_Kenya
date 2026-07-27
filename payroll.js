@@ -1058,7 +1058,9 @@ function buildMusterRollHtml(run, payslips, { businessName, logoUrl } = {}) {
   const columns = buildMusterRollColumns(payslips);
   const pages = chunkRows(payslips, MUSTER_ROWS_PER_PAGE);
   if (!pages.length) pages.push([]);
-  const generatedAt = new Date().toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' });
+  const now = new Date();
+  const generatedAt = now.toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' });
+  const printedAt = `${generatedAt}, ${now.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}`;
   const statusLabel = run.status.charAt(0).toUpperCase() + run.status.slice(1);
 
   return pages.map((pagePayslips, pageIndex) => {
@@ -1081,8 +1083,14 @@ function buildMusterRollHtml(run, payslips, { businessName, logoUrl } = {}) {
           </tbody>
         </table>
         <div class="muster-footer">
-          <div class="muster-prepared">${isLastPage ? 'Prepared by &mdash; ________________________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: __________________' : ''}</div>
-          <div class="muster-page-number">Page ${String(pageIndex + 1).padStart(2, '0')}</div>
+          <div class="muster-footer-left">
+            ${isLastPage ? '<div class="muster-prepared">Prepared by &mdash; ________________________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: __________________</div>' : ''}
+            <div class="muster-printed">Printed ${printedAt}</div>
+          </div>
+          <div class="muster-footer-right">
+            <div class="muster-page-number">Page ${String(pageIndex + 1).padStart(2, '0')}</div>
+            <div class="muster-credit">Powered by: James Sammy - JMSolutions - Kenya PAYE &amp; Tax Calculator</div>
+          </div>
         </div>
       </div>
     `;

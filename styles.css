@@ -1622,8 +1622,12 @@ body.printing-muster-roll #musterRollPrintWrap { display: block; }
   gap: 12px;
   font-size: 7.5px;
 }
+.muster-footer-left { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.muster-footer-right { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
 .muster-prepared { white-space: nowrap; }
 .muster-page-number { font-weight: 700; white-space: nowrap; }
+.muster-printed,
+.muster-credit { color: #5a4d43; white-space: nowrap; }
 
 /* Leave module ---------------------------------------------------- */
 
