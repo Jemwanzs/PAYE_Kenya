@@ -766,8 +766,13 @@ textarea {
 .approval-payroll-detail li { margin-bottom: 2px; }
 
 /* Already-decided items (read-only, no textarea/buttons) sit lighter
-   than pending ones so the actionable cards stay visually primary. */
-.approval-item-decided { background: transparent; }
+   than pending ones so the actionable cards stay visually primary --
+   but still an opaque light card, not transparent: .approval-list sits
+   directly on .employees-page's dark translucent panel, and the
+   --muted/--brand-dark/status-pill text below assumes a light card
+   backdrop. Transparent here let it inherit the dark panel instead,
+   making everything below near-illegible. */
+.approval-item-decided { background: var(--card); }
 .approval-item-decided p:last-child { margin-bottom: 0; }
 .approval-decision-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .approval-decision-line .hint { margin: 0; }
