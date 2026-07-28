@@ -395,14 +395,41 @@ create policy "employee_read_own_leave_applications"
 
 -- An employee can only ever create a pending application for themselves,
 -- under their own employer's user_id -- never approve/reject (no update
--- policy is granted to employees at all).
+-- policy is granted to employees at all). Routed through SECURITY
+-- DEFINER helpers rather than raw subqueries on employees (itself
+-- RLS-protected) -- see migrate_leave_apply_rls_fix.sql for why the raw
+-- form of this check was unreliable in production.
+create or replace function public.my_active_employee_id()
+returns uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select id from public.employees where auth_user_id = auth.uid() and status <> 'terminated' limit 1;
+$$;
+
+grant execute on function public.my_active_employee_id() to authenticated;
+
+create or replace function public.employee_owner_user_id(p_employee_id uuid)
+returns uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select user_id from public.employees where id = p_employee_id;
+$$;
+
+grant execute on function public.employee_owner_user_id(uuid) to authenticated;
+
 create policy "employee_apply_for_own_leave"
   on public.leave_applications for insert
   to authenticated
   with check (
     status = 'pending'
-    and employee_id in (select id from public.employees where auth_user_id = auth.uid() and status <> 'terminated')
-    and user_id = (select user_id from public.employees where id = employee_id)
+    and employee_id = public.my_active_employee_id()
+    and user_id = public.employee_owner_user_id(employee_id)
   );
 
 create index leave_applications_user_id_idx on public.leave_applications(user_id);
