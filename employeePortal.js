@@ -133,8 +133,12 @@ async function renderLeaveTab() {
   try {
     await loadCoreLeaveData({ force: true });
 
-    // RLS scopes employeesCache to just this employee's own row.
-    const employee = employeesCache[0];
+    // employeesCache can also contain applicant rows visible to this
+    // employee via an approver-visibility policy (see auth.js's
+    // renderEmployeePortal for the full explanation) -- currentEmployee
+    // is the one explicitly, uniquely scoped to this session's own
+    // auth_user_id, so it's the only safe way to identify "myself" here.
+    const employee = currentEmployee;
     if (!employee) {
       leaveError.textContent = 'Could not load your leave data. Try refreshing, or contact your employer.';
       leaveError.hidden = false;
@@ -182,7 +186,7 @@ function renderApplications(employee) {
 }
 
 function updateApplyPreview() {
-  const employee = employeesCache[0];
+  const employee = currentEmployee;
   const type = leaveTypesCache.find(t => t.id === applyType.value);
   if (!employee || !type || !applyStart.value || !applyEnd.value) {
     applyPreview.textContent = '';
@@ -201,7 +205,7 @@ applyForm.addEventListener('submit', async event => {
   event.preventDefault();
   applyError.hidden = true;
 
-  const employee = employeesCache[0];
+  const employee = currentEmployee;
   const type = leaveTypesCache.find(t => t.id === applyType.value);
   if (!employee || !type || !applyStart.value || !applyEnd.value) {
     applyError.textContent = 'Leave type, start date, and end date are required.';
@@ -370,12 +374,23 @@ async function buildApprovalItemsHtml(rows) {
   const payrollIds = rows.filter(a => a.action_type === 'payroll_run').map(a => a.record_id);
   const leaveIds = rows.filter(a => a.action_type === 'leave_application').map(a => a.record_id);
 
-  const [runsRes, appsRes] = await Promise.all([
+  const [runsRes, appsRes, payslipsRes] = await Promise.all([
     payrollIds.length ? supabase.from('payroll_runs').select('id, period_label').in('id', payrollIds) : { data: [] },
-    leaveIds.length ? supabase.from('leave_applications').select('id, employee_id, leave_type_id, start_date, end_date, days_requested, status').in('id', leaveIds) : { data: [] }
+    leaveIds.length ? supabase.from('leave_applications').select('id, employee_id, leave_type_id, start_date, end_date, days_requested, status').in('id', leaveIds) : { data: [] },
+    // Requires approver_read_assigned_payroll_payslips (see
+    // migrate_approver_payslip_visibility.sql) -- without it this comes
+    // back empty and the payroll card falls back to just the period
+    // label, same as before that migration is run.
+    payrollIds.length ? supabase.from('payslips').select('payroll_run_id, employee_snapshot, results').in('payroll_run_id', payrollIds) : { data: [] }
   ]);
   const runById = new Map((runsRes.data || []).map(r => [r.id, r]));
   const apps = appsRes.data || [];
+  const payslipsByRunId = new Map();
+  (payslipsRes.data || []).forEach(p => {
+    const list = payslipsByRunId.get(p.payroll_run_id) || [];
+    list.push(p);
+    payslipsByRunId.set(p.payroll_run_id, list);
+  });
 
   const employeeIds = [...new Set(apps.map(a => a.employee_id))];
   const leaveTypeIds = [...new Set(apps.map(a => a.leave_type_id))];
@@ -390,9 +405,24 @@ async function buildApprovalItemsHtml(rows) {
   return rows.map(action => {
     let summary = 'Record no longer available';
     let overallStatus = '';
+    let breakdownHtml = '';
     if (action.action_type === 'payroll_run') {
       const run = runById.get(action.record_id);
       summary = run ? `Payroll run: ${run.period_label}` : summary;
+      const payslips = payslipsByRunId.get(action.record_id) || [];
+      if (payslips.length) {
+        const totalNet = payslips.reduce((sum, p) => sum + (p.results?.netPay || 0), 0);
+        const employeeRows = payslips.map(p =>
+          `<li>${p.employee_snapshot.first_name} ${p.employee_snapshot.last_name} — ${money(p.results?.netPay || 0)}</li>`
+        ).join('');
+        breakdownHtml = `
+          <p class="hint">${payslips.length} employee(s) &middot; Total net pay: ${money(totalNet)}</p>
+          <details class="approval-payroll-detail">
+            <summary>View employees</summary>
+            <ul>${employeeRows}</ul>
+          </details>
+        `;
+      }
     } else {
       const app = appById.get(action.record_id);
       if (app) {
@@ -407,6 +437,7 @@ async function buildApprovalItemsHtml(rows) {
       return `
         <div class="approval-item" data-action-id="${action.id}">
           <p>${summary}</p>
+          ${breakdownHtml}
           <textarea placeholder="Comment (optional for approve, recommended for reject)" rows="2"></textarea>
           <div class="auth-actions">
             <button type="button" class="primary-button approval-approve-btn" data-id="${action.id}">Approve</button>
@@ -424,6 +455,7 @@ async function buildApprovalItemsHtml(rows) {
     return `
       <div class="approval-item approval-item-decided" data-action-id="${action.id}">
         <p>${summary}</p>
+        ${breakdownHtml}
         <p class="approval-decision-line">
           <span class="status-pill status-${decisionPillClass}">You ${action.decision}${decidedDate ? ` · ${decidedDate}` : ''}</span>
           ${overallLabel ? `<span class="hint">Overall: ${overallLabel}</span>` : ''}

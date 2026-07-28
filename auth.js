@@ -231,7 +231,14 @@ async function renderEmployeePortal(profile) {
   employeePortalBody.hidden = true;
   setPurchaseOverlay(false);
 
-  const { data: employee } = await supabase.from('employees').select('*').maybeSingle();
+  // Explicitly scoped to this session's own auth_user_id rather than an
+  // unfiltered select -- an approver's own portal session can also see
+  // its assigned applicants' employee rows (approver_read_applicant_employee_records
+  // in migrate_approver_visibility_fix.sql), so an unfiltered select+maybeSingle()
+  // here would throw "multiple rows returned" for any employee who
+  // approves for someone else, surfacing this exact screen as a false
+  // "access revoked" for an account that was never actually revoked.
+  const { data: employee } = await supabase.from('employees').select('*').eq('auth_user_id', profile.id).maybeSingle();
   if (!employee) {
     employeePortalRevoked.hidden = false;
     return;

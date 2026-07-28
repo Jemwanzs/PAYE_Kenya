@@ -760,6 +760,11 @@ textarea {
 .approval-item textarea { width: 100%; margin-bottom: 8px; font-size: .82rem; }
 .approval-item .auth-actions { gap: 8px; }
 
+.approval-payroll-detail { margin: 0 0 8px; }
+.approval-payroll-detail summary { cursor: pointer; font-size: .8rem; font-weight: 700; color: var(--brand-dark); }
+.approval-payroll-detail ul { margin: 6px 0 0; padding-left: 18px; font-size: .8rem; color: var(--text); }
+.approval-payroll-detail li { margin-bottom: 2px; }
+
 /* Already-decided items (read-only, no textarea/buttons) sit lighter
    than pending ones so the actionable cards stay visually primary. */
 .approval-item-decided { background: transparent; }

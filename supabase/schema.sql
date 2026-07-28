@@ -846,3 +846,31 @@ create policy "approver_read_assigned_payroll_runs"
   on public.payroll_runs for select
   to authenticated
   using (id in (select public.approver_assigned_payroll_run_ids()));
+
+-- Lets a payroll approver see the actual employee/net-pay breakdown of
+-- a still-draft run they're reviewing -- the existing payslip-read
+-- policy is deliberately restricted to approved/processed runs (an
+-- ordinary employee must never see draft figures early), but an
+-- approver reviewing a draft is the opposite case: they need to see it
+-- *before* approving.
+create or replace function public.approver_visible_payslip_ids()
+returns setof uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select p.id
+  from public.payslips p
+  join public.approval_actions aa on aa.action_type = 'payroll_run' and aa.record_id = p.payroll_run_id
+  join public.employees me on me.id = aa.employee_id
+  where me.auth_user_id = auth.uid()
+    and me.status <> 'terminated';
+$$;
+
+grant execute on function public.approver_visible_payslip_ids() to authenticated;
+
+create policy "approver_read_assigned_payroll_payslips"
+  on public.payslips for select
+  to authenticated
+  using (id in (select public.approver_visible_payslip_ids()));
