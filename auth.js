@@ -115,6 +115,35 @@ const adminPreviewMenu = document.getElementById('adminPreviewMenu');
 let inRecovery = location.hash.includes('type=recovery') || location.hash.includes('type=invite');
 if (inRecovery) showScreen('recovery');
 
+// ---------------------------------------------------------------------
+// Idle auto-logout -- signs out any signed-in session (owner or
+// employee) after 10 minutes with no mouse/keyboard/touch activity, so
+// an unattended, still-logged-in device doesn't leave payroll/personal
+// data open indefinitely. hasActiveSession is kept in sync from
+// renderForSession() (the single place that already knows whether a
+// session exists), not re-derived here, so this never has to guess.
+// ---------------------------------------------------------------------
+const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+let idleTimer = null;
+let hasActiveSession = false;
+
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = null;
+  if (!hasActiveSession) return;
+  idleTimer = setTimeout(async () => {
+    hasActiveSession = false;
+    await supabase.auth.signOut();
+    authInfo.textContent = 'You were signed out after 10 minutes of inactivity.';
+    authInfo.hidden = false;
+    renderForSession();
+  }, IDLE_TIMEOUT_MS);
+}
+
+['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(evt => {
+  document.addEventListener(evt, resetIdleTimer, { passive: true });
+});
+
 function showScreen(name) {
   Object.entries(screens).forEach(([key, el]) => {
     if (el) el.hidden = key !== name;
@@ -255,6 +284,8 @@ async function renderForSession() {
   if (inRecovery) return;
 
   if (!session) {
+    hasActiveSession = false;
+    resetIdleTimer();
     ownerAppShell.hidden = false;
     employeePortalShell.hidden = true;
     logoutBtn.hidden = true;
@@ -268,6 +299,9 @@ async function renderForSession() {
     showScreen('auth');
     return;
   }
+
+  hasActiveSession = true;
+  resetIdleTimer();
 
   const profile = await fetchProfile();
 

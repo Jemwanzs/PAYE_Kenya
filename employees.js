@@ -1,4 +1,5 @@
 import { supabase, callFunction } from './auth.js';
+import { hashReportPasscode, invalidateReportPasscodeCache } from './reportPasscode.js';
 
 const { earningComponents, irregularComponentIds, classificationLabels, toNumber, money, rawMoney } = window.PayrollShared;
 
@@ -74,6 +75,14 @@ const settingsWorkStartTime = document.getElementById('settingsWorkStartTime');
 const settingsWorkHoursPerDay = document.getElementById('settingsWorkHoursPerDay');
 const settingsBreakMinutes = document.getElementById('settingsBreakMinutes');
 const settingsWorkEndTimeDisplay = document.getElementById('settingsWorkEndTimeDisplay');
+
+const reportPasscodeStatus = document.getElementById('reportPasscodeStatus');
+const settingsReportPasscode = document.getElementById('settingsReportPasscode');
+const settingsReportPasscodeConfirm = document.getElementById('settingsReportPasscodeConfirm');
+const settingsReportPasscodeError = document.getElementById('settingsReportPasscodeError');
+const settingsReportPasscodeInfo = document.getElementById('settingsReportPasscodeInfo');
+const settingsReportPasscodeSaveBtn = document.getElementById('settingsReportPasscodeSaveBtn');
+const settingsReportPasscodeClearBtn = document.getElementById('settingsReportPasscodeClearBtn');
 
 const settingsLogoPreview = document.getElementById('settingsLogoPreview');
 const settingsLogoPlaceholder = document.getElementById('settingsLogoPlaceholder');
@@ -1140,6 +1149,13 @@ function populateSettingsForm(s) {
   settingsWorkHoursPerDay.value = s.work_hours_per_day ?? 8;
   settingsBreakMinutes.value = s.break_minutes ?? 60;
   updateWorkEndTimePreview();
+
+  reportPasscodeStatus.textContent = s.report_passcode_hash
+    ? 'A report passcode is currently set.'
+    : 'No report passcode is set -- reports can be downloaded without one.';
+  settingsReportPasscodeClearBtn.hidden = !s.report_passcode_hash;
+  settingsReportPasscode.value = '';
+  settingsReportPasscodeConfirm.value = '';
 }
 
 function updateWorkEndTimePreview() {
@@ -1397,6 +1413,82 @@ approvalWorkflowSaveBtn.addEventListener('click', async () => {
     approvalWorkflowError.textContent = err.message || 'Could not save approval workflows.';
     approvalWorkflowError.hidden = false;
     approvalWorkflowSaveBtn.disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------------
+// Report passcode -- see reportPasscode.js for the gate itself; this is
+// just the Settings UI to set/clear it. A dedicated save button (not
+// folded into the big saveSettingsBtn payload above) since that payload
+// re-submits every field on every save -- an empty passcode input would
+// otherwise have to be special-cased there to avoid clobbering the
+// existing hash on an unrelated settings change.
+// ---------------------------------------------------------------------
+
+settingsReportPasscodeSaveBtn.addEventListener('click', async () => {
+  settingsReportPasscodeError.hidden = true;
+  settingsReportPasscodeInfo.hidden = true;
+
+  const passcode = settingsReportPasscode.value;
+  const confirm = settingsReportPasscodeConfirm.value;
+  if (!passcode) {
+    settingsReportPasscodeError.textContent = 'Enter a new passcode.';
+    settingsReportPasscodeError.hidden = false;
+    return;
+  }
+  if (passcode !== confirm) {
+    settingsReportPasscodeError.textContent = 'Passcodes do not match.';
+    settingsReportPasscodeError.hidden = false;
+    return;
+  }
+
+  settingsReportPasscodeSaveBtn.disabled = true;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    const hash = await hashReportPasscode(passcode, user.id);
+    const { data, error } = await supabase
+      .from('payroll_settings')
+      .upsert({ user_id: user.id, report_passcode_hash: hash, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      .select()
+      .single();
+    if (error) throw error;
+
+    cachedSettings = data;
+    invalidateReportPasscodeCache();
+    settingsReportPasscodeInfo.textContent = 'Report passcode saved.';
+    settingsReportPasscodeInfo.hidden = false;
+    populateSettingsForm(data);
+  } catch (err) {
+    settingsReportPasscodeError.textContent = err.message || 'Could not save the passcode.';
+    settingsReportPasscodeError.hidden = false;
+  } finally {
+    settingsReportPasscodeSaveBtn.disabled = false;
+  }
+});
+
+settingsReportPasscodeClearBtn.addEventListener('click', async () => {
+  settingsReportPasscodeError.hidden = true;
+  settingsReportPasscodeInfo.hidden = true;
+  settingsReportPasscodeClearBtn.disabled = true;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from('payroll_settings')
+      .upsert({ user_id: user.id, report_passcode_hash: null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      .select()
+      .single();
+    if (error) throw error;
+
+    cachedSettings = data;
+    invalidateReportPasscodeCache();
+    settingsReportPasscodeInfo.textContent = 'Report passcode removed -- reports can now be downloaded without one.';
+    settingsReportPasscodeInfo.hidden = false;
+    populateSettingsForm(data);
+  } catch (err) {
+    settingsReportPasscodeError.textContent = err.message || 'Could not remove the passcode.';
+    settingsReportPasscodeError.hidden = false;
+  } finally {
+    settingsReportPasscodeClearBtn.disabled = false;
   }
 });
 

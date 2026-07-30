@@ -77,6 +77,10 @@ create table public.payroll_settings (
   working_days             text[] not null default array['mon','tue','wed','thu','fri'],
   work_start_time          time not null default '08:00',
   break_minutes            integer not null default 60,
+  -- SHA-256 hash (salted with this business's own user_id), never the
+  -- plaintext passcode -- see migrate_report_passcode.sql. Null means no
+  -- passcode has been configured, so reports stay ungated.
+  report_passcode_hash     text,
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now()
 );

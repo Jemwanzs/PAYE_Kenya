@@ -1,4 +1,5 @@
 import { supabase } from './auth.js';
+import { requireReportPasscode } from './reportPasscode.js';
 
 const { toNumber } = window.PayrollShared;
 
@@ -1487,7 +1488,8 @@ function buildLeaveBalancesPrintHtml() {
   `;
 }
 
-printLeaveBalancesBtn.addEventListener('click', () => {
+printLeaveBalancesBtn.addEventListener('click', async () => {
+  if (!(await requireReportPasscode())) return;
   const wrap = document.getElementById('leaveBalancePrintWrap');
   wrap.innerHTML = buildLeaveBalancesPrintHtml();
 

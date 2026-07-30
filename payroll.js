@@ -1,4 +1,5 @@
 import { supabase } from './auth.js';
+import { requireReportPasscode } from './reportPasscode.js';
 
 const { earningComponents, classificationLabels, toNumber, money, rawMoney, computePayroll } = window.PayrollShared;
 
@@ -886,13 +887,13 @@ function collapseExpandedPayslipRow() {
   if (openRow) openRow.classList.remove('is-expanded');
 }
 
-payrollDetailTableBody.addEventListener('click', event => {
+payrollDetailTableBody.addEventListener('click', async event => {
   const payslips = JSON.parse(payrollDetailTableBody.dataset.payslips || '[]');
 
   const printBtn = event.target.closest('.payslip-print-btn');
   if (printBtn) {
     const payslip = payslips.find(p => p.id === printBtn.dataset.payslipId);
-    if (payslip) printPayslip(payslip);
+    if (payslip && (await requireReportPasscode())) printPayslip(payslip);
     return;
   }
 
@@ -1134,7 +1135,9 @@ async function printMusterRoll() {
   }
 }
 
-musterRollBtn.addEventListener('click', printMusterRoll);
+musterRollBtn.addEventListener('click', async () => {
+  if (await requireReportPasscode()) printMusterRoll();
+});
 
 document.addEventListener('app:page', event => {
   if (event.detail.page === 'payroll') {

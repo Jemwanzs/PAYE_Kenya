@@ -1289,6 +1289,24 @@
           </div>
         </details>
 
+        <details class="input-group">
+          <summary><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Report passcode</span></summary>
+          <p class="hint">Require a passcode before any payslip, muster roll, or leave-balance report can be downloaded or printed -- a second gate on top of being logged in, useful if this account is shared on a shop floor or a shared computer. Leave it unset to keep reports free to download as before.</p>
+          <p class="hint" id="reportPasscodeStatus"></p>
+
+          <div class="field-grid two-col">
+            <label>New passcode <input type="password" id="settingsReportPasscode" autocomplete="off" placeholder="Leave blank to keep current" /></label>
+            <label>Confirm new passcode <input type="password" id="settingsReportPasscodeConfirm" autocomplete="off" /></label>
+          </div>
+
+          <p class="auth-error" id="settingsReportPasscodeError" hidden></p>
+          <p class="auth-info" id="settingsReportPasscodeInfo" hidden></p>
+          <div class="auth-actions" style="margin-top:14px">
+            <button type="button" class="primary-button" id="settingsReportPasscodeSaveBtn">Save passcode</button>
+            <button type="button" class="ghost-button" id="settingsReportPasscodeClearBtn" hidden>Remove passcode</button>
+          </div>
+        </details>
+
         <div class="employee-form-actions">
           <button type="button" class="primary-button" id="saveSettingsBtn">Save settings</button>
         </div>
@@ -1509,10 +1527,32 @@
     </div>
   </div>
 
+  <div class="purchase-overlay" id="reportPasscodeOverlay" hidden>
+    <div class="purchase-modal passcode-modal">
+      <button type="button" class="modal-close" id="reportPasscodeCloseBtn" aria-label="Cancel">&times;</button>
+      <div class="passcode-modal-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      </div>
+      <h2>Enter report passcode</h2>
+      <p class="hint">This business requires a passcode before a payslip, muster roll, or leave-balance report can be downloaded or printed.</p>
+      <form id="reportPasscodeForm">
+        <label>Passcode
+          <input type="password" id="reportPasscodeInput" autocomplete="off" required />
+        </label>
+        <p class="auth-error" id="reportPasscodeError" hidden></p>
+        <div class="auth-actions">
+          <button type="submit" class="primary-button">Unlock</button>
+          <button type="button" class="ghost-button" id="reportPasscodeCancelBtn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="script.js"></script>
   <script type="module" src="auth.js"></script>
+  <script type="module" src="reportPasscode.js"></script>
   <script type="module" src="employees.js"></script>
   <script type="module" src="payroll.js"></script>
   <script type="module" src="leave.js"></script>

@@ -862,6 +862,25 @@ textarea {
 }
 .modal-close:hover { background: rgba(242, 140, 24, .12); }
 
+.passcode-modal { max-width: 380px; text-align: center; }
+.passcode-modal-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  background: rgba(242, 140, 24, .12);
+  color: var(--brand-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.passcode-modal-icon svg { width: 26px; height: 26px; }
+.passcode-modal h2 { margin: 0 0 8px; }
+.passcode-modal .hint { margin: 0 0 18px; }
+.passcode-modal form label { display: block; text-align: left; margin-bottom: 14px; font-size: .85rem; font-weight: 700; color: var(--brand-dark); }
+.passcode-modal input[type="password"] { width: 100%; margin-top: 6px; text-align: center; letter-spacing: .35em; font-size: 1.15rem; }
+.passcode-modal .auth-actions { justify-content: center; }
+
 .package-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
