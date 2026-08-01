@@ -52,6 +52,47 @@ function packageLabel(days) {
   return `${days} day${days === 1 ? '' : 's'}`;
 }
 
+// ---------------------------------------------------------------------
+// Client-side (History API) routing -- pure URL-bar/deep-linking layer
+// on top of the existing screen-switching logic below, which stays the
+// single source of truth for what's actually rendered. This never
+// fetches a new page; it only keeps location.pathname in sync with
+// whichever screen is already being shown, and reads it back on load
+// and on browser back/forward to decide where to start. vercel.json has
+// a matching catch-all rewrite so a fresh visit/refresh to e.g.
+// /payroll still loads this same index.html instead of 404ing.
+// ---------------------------------------------------------------------
+const APP_PAGE_PATHS = {
+  calculator: '/calculator',
+  employees: '/employees',
+  payroll: '/payroll',
+  leave: '/leave',
+  settings: '/settings',
+  sessionLogs: '/session-logs'
+};
+const PATH_TO_APP_PAGE = Object.fromEntries(Object.entries(APP_PAGE_PATHS).map(([page, path]) => [path, page]));
+// The bare domain root has no canonical page of its own -- it resolves
+// to the calculator for reading purposes, but navigating within the app
+// always writes the explicit /calculator path (see APP_PAGE_PATHS), so
+// the URL bar never silently reverts back to "/".
+PATH_TO_APP_PAGE['/'] = 'calculator';
+
+function navigateTo(path) {
+  // Guards against a falsy/undefined path -- appNavButtons (below) is
+  // queried unscoped and also picks up the employee portal's own nav
+  // buttons (data-portal-page, not data-page), so activeAppPage can
+  // legitimately end up undefined from a portal click; this must never
+  // reach history.pushState with anything but a real path string.
+  if (!path || location.pathname === path) return;
+  history.pushState(null, '', path);
+}
+
+function authModeFromCurrentPath() {
+  if (location.pathname === '/login') return 'login';
+  if (location.pathname === '/signup') return 'signup';
+  return null;
+}
+
 const screens = {
   auth: document.getElementById('authScreen'),
   recovery: document.getElementById('recoveryScreen'),
@@ -67,7 +108,7 @@ const sessionLogsNavBtn = document.getElementById('sessionLogsNavBtn');
 const accessBanner = document.getElementById('accessBanner');
 const appNav = document.getElementById('appNav');
 const appNavButtons = [...document.querySelectorAll('.app-nav-btn')];
-let activeAppPage = 'calculator';
+let activeAppPage = PATH_TO_APP_PAGE[location.pathname] || 'calculator';
 
 const ownerAppShell = document.getElementById('ownerAppShell');
 const employeePortalShell = document.getElementById('employeePortalShell');
@@ -290,6 +331,8 @@ function renderAccess(access) {
   }
 
   showScreen(activeAppPage);
+  appNavButtons.forEach(b => { if (b.dataset.page) b.setAttribute('aria-selected', String(b.dataset.page === activeAppPage)); });
+  navigateTo(APP_PAGE_PATHS[activeAppPage]);
   calculatorGate.classList.toggle('blurred', !access.hasAccess);
   screens.employees.classList.toggle('blurred', !access.hasAccess);
   screens.payroll.classList.toggle('blurred', !access.hasAccess);
@@ -351,6 +394,8 @@ async function renderForSession() {
     appNav.hidden = true;
     accessBanner.hidden = true;
     setPurchaseOverlay(false);
+    const authMode = authModeFromCurrentPath();
+    if (authMode) setAuthMode(authMode);
     showScreen('auth');
     return;
   }
@@ -370,6 +415,12 @@ async function renderForSession() {
   ownerAppShell.hidden = false;
   employeePortalShell.hidden = true;
   logoutBtn.hidden = false;
+
+  // A non-admin who directly types/bookmarks /session-logs shouldn't
+  // land on that screen just because the URL resolved to it -- same
+  // page it'd fall back to if the nav button (already hidden for them)
+  // didn't exist at all.
+  if (activeAppPage === 'sessionLogs' && !profile.is_admin) activeAppPage = 'calculator';
 
   const checkoutComplete = new URLSearchParams(location.search).get('checkout') === 'complete';
   if (checkoutComplete) {
@@ -449,10 +500,12 @@ document.addEventListener('click', event => {
 
 appNavButtons.forEach(btn => {
   btn.addEventListener('click', () => {
+    if (!btn.dataset.page) return;
     activeAppPage = btn.dataset.page;
     appNavButtons.forEach(b => b.setAttribute('aria-selected', String(b === btn)));
     showScreen(activeAppPage);
     document.dispatchEvent(new CustomEvent('app:page', { detail: { page: activeAppPage } }));
+    navigateTo(APP_PAGE_PATHS[activeAppPage]);
   });
 });
 
@@ -550,11 +603,17 @@ authForm.addEventListener('submit', async event => {
   renderForSession();
 });
 
+function setAuthMode(mode) {
+  const isLogin = mode === 'login';
+  authSubmitBtn.dataset.mode = isLogin ? 'login' : 'signup';
+  authSubmitBtn.textContent = isLogin ? 'Log in' : 'Sign up';
+  authToggleBtn.textContent = isLogin ? 'New here? Sign up' : 'Have an account? Log in';
+}
+
 authToggleBtn.addEventListener('click', () => {
   const switchingToLogin = authSubmitBtn.dataset.mode === 'signup';
-  authSubmitBtn.dataset.mode = switchingToLogin ? 'login' : 'signup';
-  authSubmitBtn.textContent = switchingToLogin ? 'Log in' : 'Sign up';
-  authToggleBtn.textContent = switchingToLogin ? 'New here? Sign up' : 'Have an account? Log in';
+  setAuthMode(switchingToLogin ? 'login' : 'signup');
+  navigateTo(switchingToLogin ? '/login' : '/signup');
 });
 
 logoutBtn.addEventListener('click', async () => {
@@ -580,6 +639,26 @@ supabase.auth.onAuthStateChange(event => {
   }
   if (inRecovery) return;
   renderForSession();
+});
+
+// Browser back/forward -- re-derives which screen to show from the URL
+// that's now current, rather than reloading the page. Owner-app pages
+// and the login/signup toggle only; the employee portal's own tabs
+// don't participate in URL routing.
+window.addEventListener('popstate', () => {
+  if (inRecovery) return;
+  if (!hasActiveSession) {
+    const mode = authModeFromCurrentPath();
+    if (mode) setAuthMode(mode);
+    return;
+  }
+  const page = PATH_TO_APP_PAGE[location.pathname];
+  if (page && page !== activeAppPage) {
+    activeAppPage = page;
+    showScreen(activeAppPage);
+    appNavButtons.forEach(b => { if (b.dataset.page) b.setAttribute('aria-selected', String(b.dataset.page === activeAppPage)); });
+    document.dispatchEvent(new CustomEvent('app:page', { detail: { page: activeAppPage } }));
+  }
 });
 
 renderForSession();
