@@ -878,3 +878,59 @@ create policy "approver_read_assigned_payroll_payslips"
   on public.payslips for select
   to authenticated
   using (id in (select public.approver_visible_payslip_ids()));
+
+-- Cross-tenant login log for the platform admin (see
+-- migrate_session_logs.sql for the version-controlled description; kept
+-- in sync here for fresh installs).
+
+create table public.session_logs (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null references auth.users(id) on delete cascade,
+  email           text,
+  role            text,
+  business_name   text,
+  employee_name   text,
+  user_agent      text,
+  location_status text not null default 'unavailable' check (location_status in ('granted', 'denied', 'unavailable')),
+  latitude        numeric,
+  longitude       numeric,
+  created_at      timestamptz not null default now()
+);
+
+alter table public.session_logs enable row level security;
+
+create policy "insert_own_session_log"
+  on public.session_logs for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+create policy "admin_read_all_session_logs"
+  on public.session_logs for select
+  to authenticated
+  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin));
+
+create index session_logs_created_at_idx on public.session_logs(created_at desc);
+
+create or replace function public.session_log_identity()
+returns table(role text, business_name text, employee_name text)
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  v_role text;
+  v_owner_user_id uuid;
+begin
+  select p.role, coalesce(p.owner_user_id, p.id) into v_role, v_owner_user_id
+  from public.profiles p where p.id = auth.uid();
+
+  return query
+    select
+      coalesce(v_role, 'owner'),
+      coalesce((select ps.business_name from public.payroll_settings ps where ps.user_id = v_owner_user_id), ''),
+      coalesce((select e.first_name || ' ' || e.last_name from public.employees e where e.auth_user_id = auth.uid()), '');
+end;
+$$;
+
+grant execute on function public.session_log_identity() to authenticated;

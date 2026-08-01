@@ -60,8 +60,10 @@ const screens = {
   employees: document.getElementById('employeesPage'),
   payroll: document.getElementById('payrollPage'),
   leave: document.getElementById('leavePage'),
-  settings: document.getElementById('settingsPage')
+  settings: document.getElementById('settingsPage'),
+  sessionLogs: document.getElementById('sessionLogsPage')
 };
+const sessionLogsNavBtn = document.getElementById('sessionLogsNavBtn');
 const accessBanner = document.getElementById('accessBanner');
 const appNav = document.getElementById('appNav');
 const appNavButtons = [...document.querySelectorAll('.app-nav-btn')];
@@ -144,6 +146,56 @@ function resetIdleTimer() {
   document.addEventListener(evt, resetIdleTimer, { passive: true });
 });
 
+// ---------------------------------------------------------------------
+// Cross-tenant login log, readable only by the platform admin (see
+// migrate_session_logs.sql). Best-effort and fire-and-forget: a logging
+// failure, a slow/declined geolocation prompt, or an offline browser
+// must never block or delay someone's actual login. Geolocation is
+// requested (never something a browser lets a site force) -- a denial
+// or an unsupported browser is just logged as such and login proceeds
+// exactly the same either way.
+// ---------------------------------------------------------------------
+let sessionLoggedThisPageLoad = false;
+
+function getGeolocation() {
+  return new Promise(resolve => {
+    if (!('geolocation' in navigator)) {
+      resolve({ status: 'unavailable', latitude: null, longitude: null });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ status: 'granted', latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      () => resolve({ status: 'denied', latitude: null, longitude: null }),
+      { timeout: 8000 }
+    );
+  });
+}
+
+async function logSessionOnce(profile) {
+  if (sessionLoggedThisPageLoad) return;
+  sessionLoggedThisPageLoad = true;
+  try {
+    const [{ data: identityRows }, geo] = await Promise.all([
+      supabase.rpc('session_log_identity'),
+      getGeolocation()
+    ]);
+    const identity = (identityRows && identityRows[0]) || {};
+    await supabase.from('session_logs').insert({
+      user_id: profile.id,
+      email: profile.email || null,
+      role: identity.role || profile.role || 'owner',
+      business_name: identity.business_name || null,
+      employee_name: identity.employee_name || null,
+      user_agent: navigator.userAgent,
+      location_status: geo.status,
+      latitude: geo.latitude,
+      longitude: geo.longitude
+    });
+  } catch {
+    // Best-effort only.
+  }
+}
+
 function showScreen(name) {
   Object.entries(screens).forEach(([key, el]) => {
     if (el) el.hidden = key !== name;
@@ -221,6 +273,7 @@ function renderAccess(access) {
   printBtn.hidden = !access.hasAccess;
   buyMoreBtn.hidden = access.isAdmin;
   adminPreviewDropdown.hidden = !access.isAdmin;
+  sessionLogsNavBtn.hidden = !access.isAdmin;
   appNav.hidden = !access.hasAccess;
 
   if (access.isAdmin) {
@@ -242,6 +295,7 @@ function renderAccess(access) {
   screens.payroll.classList.toggle('blurred', !access.hasAccess);
   screens.leave.classList.toggle('blurred', !access.hasAccess);
   screens.settings.classList.toggle('blurred', !access.hasAccess);
+  screens.sessionLogs.classList.toggle('blurred', !access.hasAccess);
   setPurchaseOverlay(!access.hasAccess, { forced: !access.hasAccess });
 }
 
@@ -293,6 +347,7 @@ async function renderForSession() {
     printBtn.hidden = true;
     buyMoreBtn.hidden = true;
     adminPreviewDropdown.hidden = true;
+    sessionLogsNavBtn.hidden = true;
     appNav.hidden = true;
     accessBanner.hidden = true;
     setPurchaseOverlay(false);
@@ -304,6 +359,7 @@ async function renderForSession() {
   resetIdleTimer();
 
   const profile = await fetchProfile();
+  logSessionOnce(profile);
 
   if (profile.role === 'employee') {
     employeePortalLogoutBtn.hidden = false;

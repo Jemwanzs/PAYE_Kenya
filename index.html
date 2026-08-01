@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <script src="frontendGuard.js"></script>
   <main class="app-shell" id="ownerAppShell">
     <section class="hero-card">
       <div>
@@ -138,6 +139,10 @@
       <button type="button" class="app-nav-btn" data-page="settings" aria-selected="false">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings
+      </button>
+      <button type="button" class="app-nav-btn" data-page="sessionLogs" aria-selected="false" id="sessionLogsNavBtn" hidden>
+        <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+        Session logs
       </button>
     </nav>
 
@@ -1312,6 +1317,37 @@
         </div>
       </div>
     </section>
+
+    <section class="employees-page" id="sessionLogsPage" hidden>
+      <div class="employees-directory">
+        <div class="panel-header">
+          <h2>Session logs</h2>
+          <div class="hero-actions">
+            <button type="button" class="ghost-button" id="sessionLogsRefreshBtn">
+              <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+              Refresh
+            </button>
+          </div>
+        </div>
+        <p class="hint">Every login across every business that has signed up -- when, who, what device, and location if their browser granted it. Visible only to the platform admin.</p>
+        <p class="auth-error" id="sessionLogsError" hidden></p>
+
+        <div class="lookup-add-row">
+          <input type="text" id="sessionLogsSearch" placeholder="Search by email or business name" />
+        </div>
+
+        <p class="hint" id="sessionLogsEmptyState" hidden>No logins recorded yet.</p>
+
+        <div class="employee-table-wrap">
+          <table class="employee-table" id="sessionLogsTable">
+            <thead>
+              <tr><th>When</th><th>Business</th><th>User</th><th>Role</th><th>Device</th><th>Location</th></tr>
+            </thead>
+            <tbody id="sessionLogsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </main>
 
   <!-- Top-level siblings of both shells, not nested inside either --
@@ -1553,6 +1589,7 @@
   <script src="script.js"></script>
   <script type="module" src="auth.js"></script>
   <script type="module" src="reportPasscode.js"></script>
+  <script type="module" src="adminSessionLogs.js"></script>
   <script type="module" src="employees.js"></script>
   <script type="module" src="payroll.js"></script>
   <script type="module" src="leave.js"></script>
