@@ -19,7 +19,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Shared with employees.js so it reuses this exact client/session instead
 // of creating a second GoTrue client (which would fight over session storage).
-export { supabase, callFunction };
+export { supabase, callFunction, TRIAL_DAYS, EXTENDED_TRIAL_EMAILS };
 
 const TRIAL_DAYS = 1;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -68,6 +68,7 @@ const APP_PAGE_PATHS = {
   payroll: '/payroll',
   leave: '/leave',
   settings: '/settings',
+  businesses: '/businesses',
   sessionLogs: '/session-logs'
 };
 const PATH_TO_APP_PAGE = Object.fromEntries(Object.entries(APP_PAGE_PATHS).map(([page, path]) => [path, page]));
@@ -102,8 +103,10 @@ const screens = {
   payroll: document.getElementById('payrollPage'),
   leave: document.getElementById('leavePage'),
   settings: document.getElementById('settingsPage'),
+  businesses: document.getElementById('businessesPage'),
   sessionLogs: document.getElementById('sessionLogsPage')
 };
+const businessesNavBtn = document.getElementById('businessesNavBtn');
 const sessionLogsNavBtn = document.getElementById('sessionLogsNavBtn');
 const accessBanner = document.getElementById('accessBanner');
 const appNav = document.getElementById('appNav');
@@ -145,6 +148,8 @@ const purchaseSubtitle = document.getElementById('purchaseSubtitle');
 const purchaseError = document.getElementById('purchaseError');
 const purchaseLogoutBtn = document.getElementById('purchaseLogoutBtn');
 const packageGrid = document.getElementById('packageGrid');
+const purchaseEyebrow = document.getElementById('purchaseEyebrow');
+const purchaseWhyBuy = document.getElementById('purchaseWhyBuy');
 const adminPreviewDropdown = document.getElementById('adminPreviewDropdown');
 const adminPreviewBtn = document.getElementById('adminPreviewBtn');
 const adminPreviewMenu = document.getElementById('adminPreviewMenu');
@@ -250,8 +255,16 @@ function showEmployeePortalScreen(name) {
 }
 
 function computeAccess(profile) {
+  // Checked ahead of is_admin -- a blocked account stays blocked even
+  // if it also happens to carry the admin flag (defense in depth; the
+  // admin_set_business_blocked() RPC itself already refuses to let an
+  // admin block their own account, but this keeps the client-side
+  // logic correct regardless of how is_blocked ends up true).
+  if (profile.is_blocked) {
+    return { hasAccess: false, isAdmin: false, isBlocked: true, inTrial: false, hasPaidAccess: false, trialDaysLeft: 0, paidDaysLeft: 0 };
+  }
   if (profile.is_admin) {
-    return { hasAccess: true, isAdmin: true, inTrial: false, hasPaidAccess: false, trialDaysLeft: 0, paidDaysLeft: 0 };
+    return { hasAccess: true, isAdmin: true, isBlocked: false, inTrial: false, hasPaidAccess: false, trialDaysLeft: 0, paidDaysLeft: 0 };
   }
 
   const trialDays = EXTENDED_TRIAL_EMAILS[profile.email] ?? TRIAL_DAYS;
@@ -262,7 +275,7 @@ function computeAccess(profile) {
   const hasPaidAccess = now < paidUntil;
   const trialDaysLeft = Math.max(0, Math.ceil((trialEndsAt - now) / DAY_MS));
   const paidDaysLeft = Math.max(0, Math.ceil((paidUntil - now) / DAY_MS));
-  return { hasAccess: inTrial || hasPaidAccess, isAdmin: false, inTrial, hasPaidAccess, trialDaysLeft, paidDaysLeft };
+  return { hasAccess: inTrial || hasPaidAccess, isAdmin: false, isBlocked: false, inTrial, hasPaidAccess, trialDaysLeft, paidDaysLeft };
 }
 
 async function fetchProfile() {
@@ -297,27 +310,44 @@ async function pollForAccess(attempts = 5, delayMs = 1500) {
   return null;
 }
 
-function setPurchaseOverlay(show, { forced = false } = {}) {
+function setPurchaseOverlay(show, { forced = false, blocked = false } = {}) {
   purchaseOverlay.hidden = !show;
-  purchaseCloseBtn.hidden = forced;
+  purchaseCloseBtn.hidden = forced || blocked;
+  // A blocked account isn't a "buy more time" situation -- paying
+  // wouldn't fix it -- so this reuses the same modal chrome but hides
+  // everything about purchasing and swaps in a plain "contact support"
+  // message instead.
+  packageGrid.hidden = blocked;
+  purchaseWhyBuy.hidden = blocked;
+  purchaseEyebrow.hidden = blocked;
+  purchaseLogoutBtn.textContent = blocked ? 'Log out' : 'Not ready to pay? Log out';
   if (show) {
     purchaseError.hidden = true;
-    purchaseTitle.textContent = forced ? 'Your access has ended' : 'Buy more time';
-    purchaseSubtitle.textContent = forced
-      ? 'Buy a day-pass to keep using the calculator — billed in KES via Paystack (card or M-Pesa).'
-      : 'Top up before your current access runs out — billed in KES via Paystack (card or M-Pesa).';
+    if (blocked) {
+      purchaseTitle.textContent = 'Account suspended';
+      purchaseSubtitle.textContent = 'This account has been suspended by the platform admin. Contact support if you believe this is a mistake.';
+    } else {
+      purchaseTitle.textContent = forced ? 'Your access has ended' : 'Buy more time';
+      purchaseSubtitle.textContent = forced
+        ? 'Buy a day-pass to keep using the calculator — billed in KES via Paystack (card or M-Pesa).'
+        : 'Top up before your current access runs out — billed in KES via Paystack (card or M-Pesa).';
+    }
   }
 }
 
 function renderAccess(access) {
   resetBtn.hidden = !access.hasAccess;
   printBtn.hidden = !access.hasAccess;
-  buyMoreBtn.hidden = access.isAdmin;
+  buyMoreBtn.hidden = access.isAdmin || access.isBlocked;
   adminPreviewDropdown.hidden = !access.isAdmin;
+  businessesNavBtn.hidden = !access.isAdmin;
   sessionLogsNavBtn.hidden = !access.isAdmin;
   appNav.hidden = !access.hasAccess;
 
-  if (access.isAdmin) {
+  if (access.isBlocked) {
+    accessBanner.hidden = false;
+    accessBanner.textContent = 'Account suspended';
+  } else if (access.isAdmin) {
     accessBanner.hidden = false;
     accessBanner.textContent = 'Admin access';
   } else if (access.inTrial) {
@@ -338,8 +368,9 @@ function renderAccess(access) {
   screens.payroll.classList.toggle('blurred', !access.hasAccess);
   screens.leave.classList.toggle('blurred', !access.hasAccess);
   screens.settings.classList.toggle('blurred', !access.hasAccess);
+  screens.businesses.classList.toggle('blurred', !access.hasAccess);
   screens.sessionLogs.classList.toggle('blurred', !access.hasAccess);
-  setPurchaseOverlay(!access.hasAccess, { forced: !access.hasAccess });
+  setPurchaseOverlay(!access.hasAccess, { forced: !access.hasAccess, blocked: !!access.isBlocked });
 }
 
 // An employee-role profile never touches computeAccess()/the owner's
@@ -370,6 +401,22 @@ async function renderEmployeePortal(profile) {
     return;
   }
 
+  // Two independent block switches, both platform-admin-only (see
+  // migrate_admin_business_controls.sql): this specific employee's own
+  // portal access, or their entire business having been blocked (which
+  // an employee session has no RLS visibility into directly, hence the
+  // RPC). Either one shows the exact same "revoked" message -- the
+  // employee doesn't need to know which case it is, only their employer.
+  if (employee.portal_blocked) {
+    employeePortalRevoked.hidden = false;
+    return;
+  }
+  const { data: ownerBlocked } = await supabase.rpc('is_my_owner_blocked');
+  if (ownerBlocked) {
+    employeePortalRevoked.hidden = false;
+    return;
+  }
+
   employeePortalGreeting.textContent = `Welcome, ${employee.first_name}`;
   employeePortalBody.hidden = false;
   showEmployeePortalScreen(activeEmployeePortalPage);
@@ -390,6 +437,7 @@ async function renderForSession() {
     printBtn.hidden = true;
     buyMoreBtn.hidden = true;
     adminPreviewDropdown.hidden = true;
+    businessesNavBtn.hidden = true;
     sessionLogsNavBtn.hidden = true;
     appNav.hidden = true;
     accessBanner.hidden = true;
@@ -416,11 +464,11 @@ async function renderForSession() {
   employeePortalShell.hidden = true;
   logoutBtn.hidden = false;
 
-  // A non-admin who directly types/bookmarks /session-logs shouldn't
-  // land on that screen just because the URL resolved to it -- same
-  // page it'd fall back to if the nav button (already hidden for them)
-  // didn't exist at all.
-  if (activeAppPage === 'sessionLogs' && !profile.is_admin) activeAppPage = 'calculator';
+  // A non-admin who directly types/bookmarks /session-logs or
+  // /businesses shouldn't land on that screen just because the URL
+  // resolved to it -- same page it'd fall back to if the nav button
+  // (already hidden for them) didn't exist at all.
+  if ((activeAppPage === 'sessionLogs' || activeAppPage === 'businesses') && !profile.is_admin) activeAppPage = 'calculator';
 
   const checkoutComplete = new URLSearchParams(location.search).get('checkout') === 'complete';
   if (checkoutComplete) {

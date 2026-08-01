@@ -648,6 +648,9 @@ textarea {
 .payroll-detail-expand-row .breakdown-card { margin-top: 0; }
 .payroll-detail-expand-row .breakdown-card + .breakdown-card { margin-top: 14px; }
 
+.business-expand-row td { background: var(--card-2); padding: 14px clamp(10px, 3vw, 20px) 18px; }
+.business-block-btn { margin-left: 8px; }
+
 .net-card-classification {
   display: block;
   margin-top: 4px;

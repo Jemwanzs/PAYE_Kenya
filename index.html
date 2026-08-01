@@ -140,6 +140,10 @@
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings
       </button>
+      <button type="button" class="app-nav-btn" data-page="businesses" aria-selected="false" id="businessesNavBtn" hidden>
+        <svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 9h1M9 13h1M14 9h1M14 13h1M10 21v-4h4v4"/></svg>
+        Businesses
+      </button>
       <button type="button" class="app-nav-btn" data-page="sessionLogs" aria-selected="false" id="sessionLogsNavBtn" hidden>
         <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
         Session logs
@@ -1318,6 +1322,37 @@
       </div>
     </section>
 
+    <section class="employees-page" id="businessesPage" hidden>
+      <div class="employees-directory">
+        <div class="panel-header">
+          <h2>Businesses</h2>
+          <div class="hero-actions">
+            <button type="button" class="ghost-button" id="businessesRefreshBtn">
+              <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+              Refresh
+            </button>
+          </div>
+        </div>
+        <p class="hint">Every business that has signed up. Block a business to suspend its owner's login and every one of its employees' portal access; block a single employee to suspend just their own portal access. Visible only to the platform admin.</p>
+        <p class="auth-error" id="businessesError" hidden></p>
+
+        <div class="lookup-add-row">
+          <input type="text" id="businessesSearch" placeholder="Search by email or business name" />
+        </div>
+
+        <p class="hint" id="businessesEmptyState" hidden>No businesses yet.</p>
+
+        <div class="employee-table-wrap">
+          <table class="employee-table" id="businessesTable">
+            <thead>
+              <tr><th>Business</th><th>Owner email</th><th>Status</th><th>Employees</th><th>Signed up</th><th></th></tr>
+            </thead>
+            <tbody id="businessesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <section class="employees-page" id="sessionLogsPage" hidden>
       <div class="employees-directory">
         <div class="panel-header">
@@ -1548,10 +1583,10 @@
   <div class="purchase-overlay" id="purchaseOverlay" hidden>
     <div class="purchase-modal">
       <button type="button" class="modal-close" id="purchaseCloseBtn" aria-label="Close" hidden>&times;</button>
-      <p class="eyebrow"><span class="eyebrow-dot"></span>Get access</p>
+      <p class="eyebrow" id="purchaseEyebrow"><span class="eyebrow-dot"></span>Get access</p>
       <h2 id="purchaseTitle">Your free trial has ended</h2>
       <p class="hero-copy" id="purchaseSubtitle">Buy a day-pass to keep using the calculator &mdash; billed in KES via Paystack (card or M-Pesa).</p>
-      <div class="why-buy">
+      <div class="why-buy" id="purchaseWhyBuy">
         <strong>Why should you buy now?</strong>
         <p>Run payroll from a simple payslip to fully complex cases &mdash; cash and non-cash benefits, statutory tax rules already configured with sensible defaults but editable wherever you need, for every employee type: Primary, Secondary, Contractor, and PWD.</p>
       </div>
@@ -1584,12 +1619,27 @@
     </div>
   </div>
 
+  <div class="purchase-overlay" id="businessesConfirmOverlay" hidden>
+    <div class="purchase-modal" style="max-width:420px">
+      <button type="button" class="modal-close" id="businessesConfirmCloseBtn" aria-label="Close">&times;</button>
+      <p class="eyebrow"><span class="eyebrow-dot"></span>Confirm</p>
+      <h2 id="businessesConfirmTitle">Block this business?</h2>
+      <p class="hero-copy" id="businessesConfirmMessage"></p>
+      <p class="auth-error" id="businessesConfirmError" hidden></p>
+      <div class="auth-actions" style="margin-top:14px">
+        <button type="button" class="primary-button" id="businessesConfirmActionBtn">Confirm</button>
+        <button type="button" class="ghost-button" id="businessesConfirmCancelBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="script.js"></script>
   <script type="module" src="auth.js"></script>
   <script type="module" src="reportPasscode.js"></script>
   <script type="module" src="adminSessionLogs.js"></script>
+  <script type="module" src="adminBusinesses.js"></script>
   <script type="module" src="employees.js"></script>
   <script type="module" src="payroll.js"></script>
   <script type="module" src="leave.js"></script>

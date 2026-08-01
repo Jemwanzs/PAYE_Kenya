@@ -6,6 +6,11 @@ create table public.profiles (
   trial_started_at   timestamptz not null default now(),
   access_expires_at  timestamptz,
   is_admin           boolean not null default false,
+  -- Platform-admin-only "block this whole business" switch -- see
+  -- migrate_admin_business_controls.sql. Never settable by the owner
+  -- themselves (profiles has no write policy for `authenticated` at
+  -- all; only the admin_set_business_blocked() RPC can change it).
+  is_blocked         boolean not null default false,
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );
@@ -115,6 +120,11 @@ create table public.employees (
   gender               text check (gender in ('male', 'female', 'other')),
   auth_user_id         uuid unique references auth.users(id) on delete set null,
   invited_at           timestamptz,
+  -- Platform-admin-only "block this employee's own portal access"
+  -- switch, independent of `status` (which carries payroll/termination
+  -- meaning this deliberately doesn't touch) -- see
+  -- migrate_admin_business_controls.sql.
+  portal_blocked       boolean not null default false,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now()
 );
@@ -934,3 +944,120 @@ end;
 $$;
 
 grant execute on function public.session_log_identity() to authenticated;
+
+-- Super-admin business/user management (see
+-- migrate_admin_business_controls.sql for the version-controlled
+-- description; kept in sync here for fresh installs).
+
+create or replace function public.admin_list_businesses()
+returns table(
+  user_id uuid,
+  email text,
+  business_name text,
+  is_admin boolean,
+  is_blocked boolean,
+  trial_started_at timestamptz,
+  access_expires_at timestamptz,
+  employee_count bigint,
+  created_at timestamptz
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    p.id,
+    p.email,
+    ps.business_name,
+    p.is_admin,
+    p.is_blocked,
+    p.trial_started_at,
+    p.access_expires_at,
+    (select count(*) from public.employees e where e.user_id = p.id and e.status <> 'terminated'),
+    p.created_at
+  from public.profiles p
+  left join public.payroll_settings ps on ps.user_id = p.id
+  where p.role = 'owner'
+    and exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+  order by p.created_at desc;
+$$;
+
+grant execute on function public.admin_list_businesses() to authenticated;
+
+create or replace function public.admin_list_employees(p_owner_user_id uuid)
+returns table(
+  id uuid,
+  first_name text,
+  last_name text,
+  email text,
+  status text,
+  auth_user_id uuid,
+  portal_blocked boolean,
+  employee_number text
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select e.id, e.first_name, e.last_name, e.email, e.status, e.auth_user_id, e.portal_blocked, e.employee_number
+  from public.employees e
+  where e.user_id = p_owner_user_id
+    and exists (select 1 from public.profiles me where me.id = auth.uid() and me.is_admin)
+  order by e.first_name;
+$$;
+
+grant execute on function public.admin_list_employees(uuid) to authenticated;
+
+create or replace function public.admin_set_business_blocked(p_user_id uuid, p_blocked boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles where id = auth.uid() and is_admin) then
+    raise exception 'not authorized';
+  end if;
+  if p_user_id = auth.uid() then
+    raise exception 'cannot block your own account';
+  end if;
+  update public.profiles set is_blocked = p_blocked, updated_at = now() where id = p_user_id;
+end;
+$$;
+
+grant execute on function public.admin_set_business_blocked(uuid, boolean) to authenticated;
+
+create or replace function public.admin_set_employee_blocked(p_employee_id uuid, p_blocked boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles where id = auth.uid() and is_admin) then
+    raise exception 'not authorized';
+  end if;
+  update public.employees set portal_blocked = p_blocked, updated_at = now() where id = p_employee_id;
+end;
+$$;
+
+grant execute on function public.admin_set_employee_blocked(uuid, boolean) to authenticated;
+
+create or replace function public.is_my_owner_blocked()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select coalesce((
+    select p.is_blocked
+    from public.profiles p
+    join public.employees e on e.user_id = p.id
+    where e.auth_user_id = auth.uid()
+  ), false);
+$$;
+
+grant execute on function public.is_my_owner_blocked() to authenticated;
