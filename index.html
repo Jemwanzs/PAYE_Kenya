@@ -109,6 +109,26 @@
       </form>
     </section>
 
+    <section class="hero-card auth-card" id="otpScreen" hidden>
+      <div>
+        <p class="eyebrow"><span class="eyebrow-dot"></span>Verify it's you</p>
+        <h1>Enter your verification code</h1>
+        <p class="hero-copy">We sent a 5-digit code to <strong id="otpEmailDisplay"></strong>. It expires in 10 minutes.</p>
+      </div>
+      <form class="auth-form" id="otpForm">
+        <label>Verification code
+          <input type="text" id="otpCodeInput" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" autocomplete="one-time-code" required />
+        </label>
+        <p class="auth-error" id="otpError" hidden></p>
+        <p class="auth-info" id="otpInfo" hidden></p>
+        <div class="auth-actions">
+          <button type="submit" class="primary-button" id="otpVerifyBtn">Verify</button>
+          <button type="button" class="ghost-button" id="otpResendBtn">Resend code</button>
+        </div>
+        <button type="button" class="link-button" id="otpBackBtn">Log out and start over</button>
+      </form>
+    </section>
+
     <section class="hero-card" id="finalizingScreen" hidden>
       <div>
         <p class="eyebrow"><span class="eyebrow-dot"></span>Almost there</p>

@@ -1061,3 +1061,24 @@ as $$
 $$;
 
 grant execute on function public.is_my_owner_blocked() to authenticated;
+
+-- 5-digit email verification code required after every password
+-- sign-in/sign-up (see migrate_login_otp.sql for the version-controlled
+-- description; kept in sync here for fresh installs). No RLS policies
+-- for authenticated/anon at all -- only the service-role key (in
+-- api/send-login-otp.js / api/verify-login-otp.js) ever touches this
+-- table.
+
+create table public.login_otps (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  code_hash   text not null,
+  expires_at  timestamptz not null,
+  consumed_at timestamptz,
+  attempts    integer not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+alter table public.login_otps enable row level security;
+
+create index login_otps_user_id_idx on public.login_otps(user_id, created_at desc);

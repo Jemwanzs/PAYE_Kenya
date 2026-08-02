@@ -97,6 +97,7 @@ function authModeFromCurrentPath() {
 const screens = {
   auth: document.getElementById('authScreen'),
   recovery: document.getElementById('recoveryScreen'),
+  otp: document.getElementById('otpScreen'),
   finalizing: document.getElementById('finalizingScreen'),
   calculator: document.getElementById('calculatorGate'),
   employees: document.getElementById('employeesPage'),
@@ -140,6 +141,14 @@ const authInfo = document.getElementById('authInfo');
 const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
 const recoveryForm = document.getElementById('recoveryForm');
 const recoveryError = document.getElementById('recoveryError');
+const otpForm = document.getElementById('otpForm');
+const otpCodeInput = document.getElementById('otpCodeInput');
+const otpEmailDisplay = document.getElementById('otpEmailDisplay');
+const otpError = document.getElementById('otpError');
+const otpInfo = document.getElementById('otpInfo');
+const otpVerifyBtn = document.getElementById('otpVerifyBtn');
+const otpResendBtn = document.getElementById('otpResendBtn');
+const otpBackBtn = document.getElementById('otpBackBtn');
 const calculatorGate = document.getElementById('calculatorGate');
 const purchaseOverlay = document.getElementById('purchaseOverlay');
 const purchaseCloseBtn = document.getElementById('purchaseCloseBtn');
@@ -240,6 +249,68 @@ async function logSessionOnce(profile) {
   } catch {
     // Best-effort only.
   }
+}
+
+// ---------------------------------------------------------------------
+// 5-digit email verification code, required after every password
+// sign-in/sign-up (see api/send-login-otp.js / api/verify-login-otp.js
+// and migrate_login_otp.sql). Tracked per browser tab via
+// sessionStorage keyed by user id, not anything in the persisted
+// Supabase session -- closing the tab before verifying and reopening
+// starts the challenge over (sessionStorage doesn't survive that), but
+// an ordinary same-tab refresh after verifying doesn't re-prompt. A
+// token refresh re-fires the same onAuthStateChange path as a real
+// sign-in, but never re-triggers this, since it's keyed on user id,
+// which a refresh doesn't change.
+// ---------------------------------------------------------------------
+function isOtpVerifiedForSession(userId) {
+  return sessionStorage.getItem('otpVerifiedUserId') === userId;
+}
+function markOtpVerified(userId) {
+  sessionStorage.setItem('otpVerifiedUserId', userId);
+}
+function clearOtpVerified() {
+  sessionStorage.removeItem('otpVerifiedUserId');
+}
+
+let otpChallengeUserId = null;
+
+async function sendOtpCode() {
+  otpError.hidden = true;
+  otpInfo.hidden = true;
+  otpVerifyBtn.disabled = true;
+  otpResendBtn.disabled = true;
+  try {
+    await callFunction('/api/send-login-otp');
+    otpInfo.textContent = 'Code sent — check your email.';
+    otpInfo.hidden = false;
+  } catch (err) {
+    otpError.textContent = err.message || 'Could not send the verification code.';
+    otpError.hidden = false;
+  } finally {
+    otpVerifyBtn.disabled = false;
+    otpResendBtn.disabled = false;
+  }
+}
+
+// Only actually sends a fresh code the first time this user id is
+// challenged -- renderForSession() can re-run for the same still-
+// unverified session (e.g. a TOKEN_REFRESHED event), and that must not
+// spam a new email/reset the 60s resend cooldown each time.
+async function startOtpChallenge(user) {
+  // otpScreen is a sibling of authScreen/recoveryScreen inside
+  // ownerAppShell (role isn't known yet at this point in the flow, so
+  // there's no "employee portal" version of this screen) -- the shell
+  // itself must stay visible; showScreen('otp') hides the actual app
+  // content sections (calculator, employees, ...) within it.
+  ownerAppShell.hidden = false;
+  employeePortalShell.hidden = true;
+  otpEmailDisplay.textContent = user.email || 'your email';
+  showScreen('otp');
+  if (otpChallengeUserId === user.id) return;
+  otpChallengeUserId = user.id;
+  otpCodeInput.value = '';
+  await sendOtpCode();
 }
 
 function showScreen(name) {
@@ -430,6 +501,8 @@ async function renderForSession() {
   if (!session) {
     hasActiveSession = false;
     resetIdleTimer();
+    otpChallengeUserId = null;
+    clearOtpVerified();
     ownerAppShell.hidden = false;
     employeePortalShell.hidden = true;
     logoutBtn.hidden = true;
@@ -450,6 +523,17 @@ async function renderForSession() {
 
   hasActiveSession = true;
   resetIdleTimer();
+
+  // Gate ahead of everything else -- an unverified session sees only the
+  // code-entry screen, never the app shell, regardless of role. Tracked
+  // in sessionStorage rather than anything server-side, so this is a
+  // UX/velocity control layered on top of the real password auth, not a
+  // hard security boundary in its own right (consistent with this app's
+  // other client-side gates -- report passcode, idle logout).
+  if (!isOtpVerifiedForSession(session.user.id)) {
+    await startOtpChallenge(session.user);
+    return;
+  }
 
   const profile = await fetchProfile();
   logSessionOnce(profile);
@@ -648,6 +732,35 @@ authForm.addEventListener('submit', async event => {
     return;
   }
 
+  renderForSession();
+});
+
+otpForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  otpError.hidden = true;
+  otpVerifyBtn.disabled = true;
+  try {
+    await callFunction('/api/verify-login-otp', { code: otpCodeInput.value.trim() });
+    const { data: { user } } = await supabase.auth.getUser();
+    markOtpVerified(user.id);
+    otpChallengeUserId = null;
+    renderForSession();
+  } catch (err) {
+    otpError.textContent = err.message || 'Could not verify this code.';
+    otpError.hidden = false;
+    otpCodeInput.value = '';
+    otpCodeInput.focus();
+  } finally {
+    otpVerifyBtn.disabled = false;
+  }
+});
+
+otpResendBtn.addEventListener('click', sendOtpCode);
+
+otpBackBtn.addEventListener('click', async () => {
+  otpChallengeUserId = null;
+  clearOtpVerified();
+  await supabase.auth.signOut();
   renderForSession();
 });
 
