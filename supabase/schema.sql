@@ -86,6 +86,15 @@ create table public.payroll_settings (
   -- plaintext passcode -- see migrate_report_passcode.sql. Null means no
   -- passcode has been configured, so reports stay ungated.
   report_passcode_hash     text,
+  -- Employee-only login restrictions (never applied to the owner's own
+  -- login) -- see migrate_login_security.sql.
+  login_window_enabled     boolean not null default false,
+  login_window_start       time not null default '08:00',
+  login_window_end         time not null default '18:00',
+  login_geofence_enabled   boolean not null default false,
+  login_geofence_latitude  numeric,
+  login_geofence_longitude numeric,
+  login_geofence_radius_meters numeric not null default 500,
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now()
 );
@@ -1082,3 +1091,83 @@ create table public.login_otps (
 alter table public.login_otps enable row level security;
 
 create index login_otps_user_id_idx on public.login_otps(user_id, created_at desc);
+
+-- Employee-only login time-window/geofence enforcement (see
+-- migrate_login_security.sql for the version-controlled description;
+-- kept in sync here for fresh installs).
+
+create or replace function public.check_login_security(p_latitude numeric, p_longitude numeric, p_location_status text)
+returns table(allowed boolean, reason text)
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  v_role text;
+  v_owner_user_id uuid;
+  v_settings record;
+  v_now_time time;
+  v_in_window boolean;
+  v_distance_m numeric;
+begin
+  select p.role, coalesce(p.owner_user_id, p.id) into v_role, v_owner_user_id
+  from public.profiles p where p.id = auth.uid();
+
+  if v_role is distinct from 'employee' then
+    return query select true, null::text;
+    return;
+  end if;
+
+  select * into v_settings from public.payroll_settings where user_id = v_owner_user_id;
+  if v_settings is null then
+    return query select true, null::text;
+    return;
+  end if;
+
+  if v_settings.login_window_enabled then
+    v_now_time := (now() at time zone 'Africa/Nairobi')::time;
+    if v_settings.login_window_start <= v_settings.login_window_end then
+      v_in_window := v_now_time between v_settings.login_window_start and v_settings.login_window_end;
+    else
+      v_in_window := v_now_time >= v_settings.login_window_start or v_now_time <= v_settings.login_window_end;
+    end if;
+    if not v_in_window then
+      return query select false, format(
+        'Logins are only allowed between %s and %s (East Africa Time).',
+        to_char(v_settings.login_window_start, 'HH24:MI'),
+        to_char(v_settings.login_window_end, 'HH24:MI')
+      );
+      return;
+    end if;
+  end if;
+
+  if v_settings.login_geofence_enabled then
+    if p_location_status is distinct from 'granted' or p_latitude is null or p_longitude is null then
+      return query select false, 'This business requires your device location to log in, and it was not available. Enable location access in your browser and try again.';
+      return;
+    end if;
+
+    v_distance_m := 6371000 * acos(
+      greatest(-1, least(1,
+        cos(radians(v_settings.login_geofence_latitude)) * cos(radians(p_latitude)) *
+        cos(radians(p_longitude) - radians(v_settings.login_geofence_longitude)) +
+        sin(radians(v_settings.login_geofence_latitude)) * sin(radians(p_latitude))
+      ))
+    );
+
+    if v_distance_m > v_settings.login_geofence_radius_meters then
+      return query select false, format(
+        'You are outside the allowed login area for this business (%s m away, %s m allowed).',
+        round(v_distance_m)::text,
+        round(v_settings.login_geofence_radius_meters)::text
+      );
+      return;
+    end if;
+  end if;
+
+  return query select true, null::text;
+end;
+$$;
+
+grant execute on function public.check_login_security(numeric, numeric, text) to authenticated;

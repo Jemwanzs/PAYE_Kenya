@@ -19,7 +19,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Shared with employees.js so it reuses this exact client/session instead
 // of creating a second GoTrue client (which would fight over session storage).
-export { supabase, callFunction, TRIAL_DAYS, EXTENDED_TRIAL_EMAILS };
+export { supabase, callFunction, TRIAL_DAYS, EXTENDED_TRIAL_EMAILS, getGeolocation };
 
 const TRIAL_DAYS = 1;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -98,6 +98,7 @@ const screens = {
   auth: document.getElementById('authScreen'),
   recovery: document.getElementById('recoveryScreen'),
   otp: document.getElementById('otpScreen'),
+  loginBlocked: document.getElementById('loginBlockedScreen'),
   finalizing: document.getElementById('finalizingScreen'),
   calculator: document.getElementById('calculatorGate'),
   employees: document.getElementById('employeesPage'),
@@ -149,6 +150,9 @@ const otpInfo = document.getElementById('otpInfo');
 const otpVerifyBtn = document.getElementById('otpVerifyBtn');
 const otpResendBtn = document.getElementById('otpResendBtn');
 const otpBackBtn = document.getElementById('otpBackBtn');
+const loginBlockedReasonEl = document.getElementById('loginBlockedReason');
+const loginBlockedRetryBtn = document.getElementById('loginBlockedRetryBtn');
+const loginBlockedLogoutBtn = document.getElementById('loginBlockedLogoutBtn');
 const calculatorGate = document.getElementById('calculatorGate');
 const purchaseOverlay = document.getElementById('purchaseOverlay');
 const purchaseCloseBtn = document.getElementById('purchaseCloseBtn');
@@ -226,13 +230,16 @@ function getGeolocation() {
   });
 }
 
-async function logSessionOnce(profile) {
+// cachedGeo lets logSessionOnce reuse the geolocation result the login
+// security gate below already fetched, instead of prompting/requesting
+// it a second time in the same login.
+async function logSessionOnce(profile, cachedGeo) {
   if (sessionLoggedThisPageLoad) return;
   sessionLoggedThisPageLoad = true;
   try {
     const [{ data: identityRows }, geo] = await Promise.all([
       supabase.rpc('session_log_identity'),
-      getGeolocation()
+      cachedGeo ? Promise.resolve(cachedGeo) : getGeolocation()
     ]);
     const identity = (identityRows && identityRows[0]) || {};
     await supabase.from('session_logs').insert({
@@ -250,6 +257,63 @@ async function logSessionOnce(profile) {
     // Best-effort only.
   }
 }
+
+// ---------------------------------------------------------------------
+// Employee-only login time-window/geofence enforcement (see
+// migrate_login_security.sql). Runs before the OTP code is even sent --
+// no point emailing a code to someone who's about to be blocked anyway.
+// Never blocks the business owner's own login (enforced server-side in
+// check_login_security() -- see that migration for why: self-lockout
+// risk, since only the owner can reach Settings to turn this off).
+// Checked once per (user id, tab session), same lifecycle as the OTP
+// challenge below, not on every renderForSession() re-render.
+// ---------------------------------------------------------------------
+let securityCheckedUserId = null;
+let loginBlockedReason = null;
+let cachedLoginGeo = null;
+
+// Returns true if login should stop here (blocked screen now showing).
+async function runLoginSecurityGate(user) {
+  if (securityCheckedUserId !== user.id) {
+    securityCheckedUserId = user.id;
+    loginBlockedReason = null;
+    cachedLoginGeo = await getGeolocation();
+    try {
+      const { data } = await supabase.rpc('check_login_security', {
+        p_latitude: cachedLoginGeo.latitude,
+        p_longitude: cachedLoginGeo.longitude,
+        p_location_status: cachedLoginGeo.status
+      });
+      const result = (data && data[0]) || { allowed: true, reason: null };
+      if (!result.allowed) loginBlockedReason = result.reason || 'Login is not allowed right now.';
+    } catch {
+      // Fails open -- an RPC error here must never lock everyone out.
+      loginBlockedReason = null;
+    }
+  }
+
+  if (loginBlockedReason) {
+    ownerAppShell.hidden = false;
+    employeePortalShell.hidden = true;
+    loginBlockedReasonEl.textContent = loginBlockedReason;
+    showScreen('loginBlocked');
+    return true;
+  }
+  return false;
+}
+
+loginBlockedRetryBtn.addEventListener('click', () => {
+  securityCheckedUserId = null;
+  renderForSession();
+});
+
+loginBlockedLogoutBtn.addEventListener('click', async () => {
+  securityCheckedUserId = null;
+  otpChallengeUserId = null;
+  clearOtpVerified();
+  await supabase.auth.signOut();
+  renderForSession();
+});
 
 // ---------------------------------------------------------------------
 // 5-digit email verification code, required after every password
@@ -502,6 +566,7 @@ async function renderForSession() {
     hasActiveSession = false;
     resetIdleTimer();
     otpChallengeUserId = null;
+    securityCheckedUserId = null;
     clearOtpVerified();
     ownerAppShell.hidden = false;
     employeePortalShell.hidden = true;
@@ -531,12 +596,13 @@ async function renderForSession() {
   // hard security boundary in its own right (consistent with this app's
   // other client-side gates -- report passcode, idle logout).
   if (!isOtpVerifiedForSession(session.user.id)) {
+    if (await runLoginSecurityGate(session.user)) return;
     await startOtpChallenge(session.user);
     return;
   }
 
   const profile = await fetchProfile();
-  logSessionOnce(profile);
+  logSessionOnce(profile, cachedLoginGeo);
 
   if (profile.role === 'employee') {
     employeePortalLogoutBtn.hidden = false;

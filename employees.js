@@ -1,4 +1,4 @@
-import { supabase, callFunction } from './auth.js';
+import { supabase, callFunction, getGeolocation } from './auth.js';
 import { hashReportPasscode, invalidateReportPasscodeCache } from './reportPasscode.js';
 
 const { earningComponents, irregularComponentIds, classificationLabels, toNumber, money, rawMoney } = window.PayrollShared;
@@ -83,6 +83,18 @@ const settingsReportPasscodeError = document.getElementById('settingsReportPassc
 const settingsReportPasscodeInfo = document.getElementById('settingsReportPasscodeInfo');
 const settingsReportPasscodeSaveBtn = document.getElementById('settingsReportPasscodeSaveBtn');
 const settingsReportPasscodeClearBtn = document.getElementById('settingsReportPasscodeClearBtn');
+
+const settingsLoginWindowEnabled = document.getElementById('settingsLoginWindowEnabled');
+const settingsLoginWindowStart = document.getElementById('settingsLoginWindowStart');
+const settingsLoginWindowEnd = document.getElementById('settingsLoginWindowEnd');
+const settingsGeofenceEnabled = document.getElementById('settingsGeofenceEnabled');
+const settingsGeofenceLat = document.getElementById('settingsGeofenceLat');
+const settingsGeofenceLng = document.getElementById('settingsGeofenceLng');
+const settingsGeofenceRadius = document.getElementById('settingsGeofenceRadius');
+const settingsGeofenceUseCurrentBtn = document.getElementById('settingsGeofenceUseCurrentBtn');
+const settingsLoginSecurityError = document.getElementById('settingsLoginSecurityError');
+const settingsLoginSecurityInfo = document.getElementById('settingsLoginSecurityInfo');
+const settingsLoginSecuritySaveBtn = document.getElementById('settingsLoginSecuritySaveBtn');
 
 const settingsLogoPreview = document.getElementById('settingsLogoPreview');
 const settingsLogoPlaceholder = document.getElementById('settingsLogoPlaceholder');
@@ -1156,6 +1168,14 @@ function populateSettingsForm(s) {
   settingsReportPasscodeClearBtn.hidden = !s.report_passcode_hash;
   settingsReportPasscode.value = '';
   settingsReportPasscodeConfirm.value = '';
+
+  settingsLoginWindowEnabled.checked = !!s.login_window_enabled;
+  settingsLoginWindowStart.value = s.login_window_start ? s.login_window_start.slice(0, 5) : '08:00';
+  settingsLoginWindowEnd.value = s.login_window_end ? s.login_window_end.slice(0, 5) : '18:00';
+  settingsGeofenceEnabled.checked = !!s.login_geofence_enabled;
+  settingsGeofenceLat.value = s.login_geofence_latitude ?? '';
+  settingsGeofenceLng.value = s.login_geofence_longitude ?? '';
+  settingsGeofenceRadius.value = s.login_geofence_radius_meters ?? 500;
 }
 
 function updateWorkEndTimePreview() {
@@ -1489,6 +1509,79 @@ settingsReportPasscodeClearBtn.addEventListener('click', async () => {
     settingsReportPasscodeError.hidden = false;
   } finally {
     settingsReportPasscodeClearBtn.disabled = false;
+  }
+});
+
+settingsGeofenceUseCurrentBtn.addEventListener('click', async () => {
+  settingsLoginSecurityError.hidden = true;
+  settingsGeofenceUseCurrentBtn.disabled = true;
+  try {
+    const geo = await getGeolocation();
+    if (geo.status !== 'granted') {
+      settingsLoginSecurityError.textContent = 'Could not get your current location -- check that location access is allowed for this site in your browser.';
+      settingsLoginSecurityError.hidden = false;
+      return;
+    }
+    settingsGeofenceLat.value = geo.latitude.toFixed(6);
+    settingsGeofenceLng.value = geo.longitude.toFixed(6);
+  } finally {
+    settingsGeofenceUseCurrentBtn.disabled = false;
+  }
+});
+
+settingsLoginSecuritySaveBtn.addEventListener('click', async () => {
+  settingsLoginSecurityError.hidden = true;
+  settingsLoginSecurityInfo.hidden = true;
+
+  const geofenceEnabled = settingsGeofenceEnabled.checked;
+  const lat = settingsGeofenceLat.value.trim() ? Number(settingsGeofenceLat.value) : null;
+  const lng = settingsGeofenceLng.value.trim() ? Number(settingsGeofenceLng.value) : null;
+  const radius = toNumber(settingsGeofenceRadius.value) || 500;
+  if (geofenceEnabled && (lat === null || lng === null || Number.isNaN(lat) || Number.isNaN(lng))) {
+    settingsLoginSecurityError.textContent = 'Enter a valid latitude and longitude, or use "Use my current location".';
+    settingsLoginSecurityError.hidden = false;
+    return;
+  }
+  if (lat !== null && (lat < -90 || lat > 90)) {
+    settingsLoginSecurityError.textContent = 'Latitude must be between -90 and 90.';
+    settingsLoginSecurityError.hidden = false;
+    return;
+  }
+  if (lng !== null && (lng < -180 || lng > 180)) {
+    settingsLoginSecurityError.textContent = 'Longitude must be between -180 and 180.';
+    settingsLoginSecurityError.hidden = false;
+    return;
+  }
+
+  settingsLoginSecuritySaveBtn.disabled = true;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from('payroll_settings')
+      .upsert({
+        user_id: user.id,
+        login_window_enabled: settingsLoginWindowEnabled.checked,
+        login_window_start: settingsLoginWindowStart.value || '08:00',
+        login_window_end: settingsLoginWindowEnd.value || '18:00',
+        login_geofence_enabled: geofenceEnabled,
+        login_geofence_latitude: lat,
+        login_geofence_longitude: lng,
+        login_geofence_radius_meters: radius,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' })
+      .select()
+      .single();
+    if (error) throw error;
+
+    cachedSettings = data;
+    settingsLoginSecurityInfo.textContent = 'Security settings saved.';
+    settingsLoginSecurityInfo.hidden = false;
+    populateSettingsForm(data);
+  } catch (err) {
+    settingsLoginSecurityError.textContent = err.message || 'Could not save security settings.';
+    settingsLoginSecurityError.hidden = false;
+  } finally {
+    settingsLoginSecuritySaveBtn.disabled = false;
   }
 });
 

@@ -129,6 +129,18 @@
       </form>
     </section>
 
+    <section class="hero-card auth-card" id="loginBlockedScreen" hidden>
+      <div>
+        <p class="eyebrow"><span class="eyebrow-dot"></span>Access restricted</p>
+        <h1>Login not allowed right now</h1>
+        <p class="hero-copy" id="loginBlockedReason"></p>
+      </div>
+      <div class="auth-actions">
+        <button type="button" class="ghost-button" id="loginBlockedRetryBtn">Try again</button>
+        <button type="button" class="ghost-button" id="loginBlockedLogoutBtn">Log out</button>
+      </div>
+    </section>
+
     <section class="hero-card" id="finalizingScreen" hidden>
       <div>
         <p class="eyebrow"><span class="eyebrow-dot"></span>Almost there</p>
@@ -1333,6 +1345,35 @@
           <div class="auth-actions" style="margin-top:14px">
             <button type="button" class="primary-button" id="settingsReportPasscodeSaveBtn">Save passcode</button>
             <button type="button" class="ghost-button" id="settingsReportPasscodeClearBtn" hidden>Remove passcode</button>
+          </div>
+        </details>
+
+        <details class="input-group">
+          <summary><svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg><span>Employee login security</span></summary>
+          <p class="hint">These restrictions apply to your employees' own portal logins only -- your own login is never restricted by either of these, so you can always reach this page to adjust or turn them off.</p>
+
+          <label class="approval-workflow-toggle"><input type="checkbox" id="settingsLoginWindowEnabled" /> Only allow employee logins during a set time window</label>
+          <div class="field-grid two-col">
+            <label>Allowed from <input type="time" id="settingsLoginWindowStart" /></label>
+            <label>Allowed until <input type="time" id="settingsLoginWindowEnd" /></label>
+          </div>
+          <p class="hint">Times are in East Africa Time. If "until" is earlier than "from", the window spans midnight (e.g. 22:00 to 06:00).</p>
+
+          <label class="approval-workflow-toggle" style="margin-top:16px"><input type="checkbox" id="settingsGeofenceEnabled" /> Only allow employee logins within a set location radius</label>
+          <div class="field-grid two-col">
+            <label>Latitude <input type="text" id="settingsGeofenceLat" inputmode="decimal" placeholder="e.g. -1.286389" /></label>
+            <label>Longitude <input type="text" id="settingsGeofenceLng" inputmode="decimal" placeholder="e.g. 36.817223" /></label>
+            <label>Radius (meters) <input type="number" id="settingsGeofenceRadius" min="10" step="10" /></label>
+          </div>
+          <div class="auth-actions">
+            <button type="button" class="ghost-button" id="settingsGeofenceUseCurrentBtn">Use my current location</button>
+          </div>
+          <p class="hint">An employee's browser must grant location access and be within this radius (in meters) of the coordinates above to log in.</p>
+
+          <p class="auth-error" id="settingsLoginSecurityError" hidden></p>
+          <p class="auth-info" id="settingsLoginSecurityInfo" hidden></p>
+          <div class="auth-actions" style="margin-top:14px">
+            <button type="button" class="primary-button" id="settingsLoginSecuritySaveBtn">Save security settings</button>
           </div>
         </details>
 
