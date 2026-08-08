@@ -1186,30 +1186,40 @@ $$;
 
 grant execute on function public.check_login_security(numeric, numeric, text) to authenticated;
 
--- Revokes Postgres's default PUBLIC execute grant from every SECURITY
--- DEFINER function above (see migrate_revoke_public_execute.sql for the
--- version-controlled description; kept in sync here for fresh
--- installs). Functions that already grant execute to `authenticated`
--- above keep working for signed-in users -- only unauthenticated/`anon`
--- direct RPC access is closed off.
+-- Revokes execute from every SECURITY DEFINER function above for both
+-- the plain Postgres-wide `PUBLIC` pseudo-role AND, critically,
+-- Supabase's own `anon` role directly -- Supabase applies its own
+-- default privileges in the `public` schema granting EXECUTE straight
+-- to `anon`/`authenticated` on every new function (what makes a freshly
+-- created function immediately RPC-callable with no manual grant),
+-- independent of the separate implicit PUBLIC grant, so revoking only
+-- from PUBLIC leaves anon's direct grant untouched. See
+-- migrate_revoke_public_execute.sql and migrate_revoke_anon_execute.sql
+-- for the version-controlled history of getting this right; kept in
+-- sync here for fresh installs. Functions with an explicit
+-- `grant ... to authenticated` above keep working for signed-in users;
+-- three (_create_approval_actions, handle_new_user,
+-- handle_leave_application_submitted) are never meant to be reached by
+-- any client role directly at all, so `authenticated` is revoked too.
 
-revoke execute on function public.handle_new_user() from public;
-revoke execute on function public.next_employee_number() from public;
-revoke execute on function public.employee_visible_payroll_run_ids() from public;
-revoke execute on function public.my_active_employee_id() from public;
-revoke execute on function public.employee_owner_user_id(uuid) from public;
-revoke execute on function public._create_approval_actions(text, uuid, uuid) from public;
-revoke execute on function public.submit_for_approval(text, uuid) from public;
-revoke execute on function public.handle_leave_application_submitted() from public;
-revoke execute on function public.record_approval_decision(uuid, text, text) from public;
-revoke execute on function public.approver_assigned_leave_application_ids() from public;
-revoke execute on function public.approver_visible_applicant_ids() from public;
-revoke execute on function public.approver_assigned_payroll_run_ids() from public;
-revoke execute on function public.approver_visible_payslip_ids() from public;
-revoke execute on function public.session_log_identity() from public;
-revoke execute on function public.admin_list_businesses() from public;
-revoke execute on function public.admin_list_employees(uuid) from public;
-revoke execute on function public.admin_set_business_blocked(uuid, boolean) from public;
-revoke execute on function public.admin_set_employee_blocked(uuid, boolean) from public;
-revoke execute on function public.is_my_owner_blocked() from public;
-revoke execute on function public.check_login_security(numeric, numeric, text) from public;
+revoke execute on function public._create_approval_actions(text, uuid, uuid) from public, anon, authenticated;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.handle_leave_application_submitted() from public, anon, authenticated;
+
+revoke execute on function public.next_employee_number() from public, anon;
+revoke execute on function public.employee_visible_payroll_run_ids() from public, anon;
+revoke execute on function public.my_active_employee_id() from public, anon;
+revoke execute on function public.employee_owner_user_id(uuid) from public, anon;
+revoke execute on function public.submit_for_approval(text, uuid) from public, anon;
+revoke execute on function public.record_approval_decision(uuid, text, text) from public, anon;
+revoke execute on function public.approver_assigned_leave_application_ids() from public, anon;
+revoke execute on function public.approver_visible_applicant_ids() from public, anon;
+revoke execute on function public.approver_assigned_payroll_run_ids() from public, anon;
+revoke execute on function public.approver_visible_payslip_ids() from public, anon;
+revoke execute on function public.session_log_identity() from public, anon;
+revoke execute on function public.admin_list_businesses() from public, anon;
+revoke execute on function public.admin_list_employees(uuid) from public, anon;
+revoke execute on function public.admin_set_business_blocked(uuid, boolean) from public, anon;
+revoke execute on function public.admin_set_employee_blocked(uuid, boolean) from public, anon;
+revoke execute on function public.is_my_owner_blocked() from public, anon;
+revoke execute on function public.check_login_security(numeric, numeric, text) from public, anon;
