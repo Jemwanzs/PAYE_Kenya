@@ -1171,3 +1171,31 @@ end;
 $$;
 
 grant execute on function public.check_login_security(numeric, numeric, text) to authenticated;
+
+-- Revokes Postgres's default PUBLIC execute grant from every SECURITY
+-- DEFINER function above (see migrate_revoke_public_execute.sql for the
+-- version-controlled description; kept in sync here for fresh
+-- installs). Functions that already grant execute to `authenticated`
+-- above keep working for signed-in users -- only unauthenticated/`anon`
+-- direct RPC access is closed off.
+
+revoke execute on function public.handle_new_user() from public;
+revoke execute on function public.next_employee_number() from public;
+revoke execute on function public.employee_visible_payroll_run_ids() from public;
+revoke execute on function public.my_active_employee_id() from public;
+revoke execute on function public.employee_owner_user_id(uuid) from public;
+revoke execute on function public._create_approval_actions(text, uuid, uuid) from public;
+revoke execute on function public.submit_for_approval(text, uuid) from public;
+revoke execute on function public.handle_leave_application_submitted() from public;
+revoke execute on function public.record_approval_decision(uuid, text, text) from public;
+revoke execute on function public.approver_assigned_leave_application_ids() from public;
+revoke execute on function public.approver_visible_applicant_ids() from public;
+revoke execute on function public.approver_assigned_payroll_run_ids() from public;
+revoke execute on function public.approver_visible_payslip_ids() from public;
+revoke execute on function public.session_log_identity() from public;
+revoke execute on function public.admin_list_businesses() from public;
+revoke execute on function public.admin_list_employees(uuid) from public;
+revoke execute on function public.admin_set_business_blocked(uuid, boolean) from public;
+revoke execute on function public.admin_set_employee_blocked(uuid, boolean) from public;
+revoke execute on function public.is_my_owner_blocked() from public;
+revoke execute on function public.check_login_security(numeric, numeric, text) from public;
