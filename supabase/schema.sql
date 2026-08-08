@@ -505,10 +505,13 @@ insert into storage.buckets (id, name, public)
 values ('business-logos', 'business-logos', true)
 on conflict (id) do nothing;
 
-create policy "business_logos_public_read"
-  on storage.objects for select
-  to public
-  using (bucket_id = 'business-logos');
+-- No SELECT policy on storage.objects for this bucket -- unnecessary
+-- (the bucket's own public=true flag already serves individual objects
+-- at /storage/v1/object/public/... without consulting RLS at all, which
+-- is the only way this app ever reads a logo) and its only real effect
+-- would be letting anyone list/enumerate every file -- and every
+-- business's user_id, used as the folder name -- in the bucket via the
+-- RLS-gated listing endpoint. See migrate_security_advisor_fixes.sql.
 
 create policy "business_logos_owner_write"
   on storage.objects for insert
@@ -1089,6 +1092,17 @@ create table public.login_otps (
 );
 
 alter table public.login_otps enable row level security;
+
+-- Explicit deny-all, not just an absence of policy -- functionally
+-- identical to zero policies (still default-deny for every client-side
+-- role either way, and service_role bypasses RLS regardless), but on
+-- record as intentional rather than something Supabase's Security
+-- Advisor has to flag and guess about.
+create policy "no_client_access_login_otps"
+  on public.login_otps for all
+  to authenticated, anon
+  using (false)
+  with check (false);
 
 create index login_otps_user_id_idx on public.login_otps(user_id, created_at desc);
 
