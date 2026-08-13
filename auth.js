@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { showScreenWatermark, hideScreenWatermark } from './watermark.js';
 
 // Public by design — Row Level Security on the `profiles` table is what
 // actually restricts access, not secrecy of these values.
@@ -568,6 +569,7 @@ async function renderForSession() {
     otpChallengeUserId = null;
     securityCheckedUserId = null;
     clearOtpVerified();
+    hideScreenWatermark();
     ownerAppShell.hidden = false;
     employeePortalShell.hidden = true;
     logoutBtn.hidden = true;
@@ -603,6 +605,7 @@ async function renderForSession() {
 
   const profile = await fetchProfile();
   logSessionOnce(profile, cachedLoginGeo);
+  showScreenWatermark(profile.email);
 
   if (profile.role === 'employee') {
     employeePortalLogoutBtn.hidden = false;

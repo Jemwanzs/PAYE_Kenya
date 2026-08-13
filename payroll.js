@@ -1,5 +1,6 @@
-import { supabase } from './auth.js';
+import { supabase, callFunction } from './auth.js';
 import { requireReportPasscode } from './reportPasscode.js';
+import { applyPrintWatermark } from './watermark.js';
 
 const { earningComponents, classificationLabels, toNumber, money, rawMoney, computePayroll } = window.PayrollShared;
 
@@ -47,6 +48,7 @@ const syncEmployeeNumbersBtn = document.getElementById('syncEmployeeNumbersBtn')
 const editRunBtn = document.getElementById('editRunBtn');
 const recallRunBtn = document.getElementById('recallRunBtn');
 const musterRollBtn = document.getElementById('musterRollBtn');
+const musterRollEmailBtn = document.getElementById('musterRollEmailBtn');
 
 let payrollRunsLoaded = false;
 let currentRunId = null;
@@ -457,7 +459,10 @@ async function openRun(runId) {
       <td>${money(p.results.displayGross)}</td>
       <td>${money(p.results.paye)}</td>
       <td>${money(p.results.netPay)}</td>
-      <td><button type="button" class="ghost-button payslip-print-btn" data-payslip-id="${p.id}">Payslip</button></td>
+      <td>
+        <button type="button" class="ghost-button payslip-print-btn" data-payslip-id="${p.id}">Payslip</button>
+        <button type="button" class="ghost-button payslip-email-btn" data-payslip-id="${p.id}">Email</button>
+      </td>
     </tr>
   `).join('');
   payrollDetailTableBody.dataset.payslips = JSON.stringify(rows.map(p => ({ id: p.id, employee_snapshot: p.employee_snapshot, compensation_snapshot: p.compensation_snapshot, results: p.results, period_label: run.period_label })));
@@ -472,6 +477,7 @@ async function openRun(runId) {
   recallRunBtn.hidden = run.status === 'draft';
   recallRunBtn.textContent = run.status === 'processed' ? 'Recall to approved' : 'Recall to draft';
   musterRollBtn.hidden = run.status === 'draft';
+  musterRollEmailBtn.hidden = run.status === 'draft';
 
   await applyApprovalWorkflowUi(run);
 }
@@ -810,7 +816,10 @@ function populatePayslipFields(payslip, prefix) {
   el('EmployerRows').innerHTML = rowsHtml(s.employer);
 }
 
-async function printPayslip(payslip) {
+// Shared by printPayslip() and emailPayslip() -- populates the same
+// hidden #payslipPrintWrap template either way, so the emailed copy is
+// guaranteed to match what printing would have produced.
+async function populatePayslipPrintView(payslip) {
   populatePayslipFields(payslip, 'payslipPrint');
 
   const { data: settingsRow } = await supabase.from('payroll_settings').select('business_name, business_logo_url').maybeSingle();
@@ -825,6 +834,10 @@ async function printPayslip(payslip) {
   const dateStr = now.toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' });
   document.getElementById('payslipPrintDate').textContent = `Printed ${dateStr}, ${timeStr}`;
+}
+
+async function printPayslip(payslip) {
+  await populatePayslipPrintView(payslip);
 
   // @page size is a page-level rule, not scopable by a body class, so it's
   // injected just for this print and removed right after -- same trick as
@@ -839,13 +852,33 @@ async function printPayslip(payslip) {
   document.title = '';
 
   const wrap = document.getElementById('payslipPrintWrap');
+  applyPrintWatermark(wrap);
   wrap.hidden = false;
   document.body.classList.add('printing-payslip');
   window.print();
   document.body.classList.remove('printing-payslip');
   wrap.hidden = true;
+  wrap.querySelectorAll('.print-watermark').forEach(el => el.remove());
   pageStyle.remove();
   document.title = originalTitle;
+}
+
+// Never hands the payslip to the browser for a local save -- relayed
+// server-side straight to the signed-in owner's own registered email
+// (api/email-report.js determines the recipient itself from the auth
+// token, so this can't be pointed at an arbitrary address).
+async function emailPayslip(payslip) {
+  await populatePayslipPrintView(payslip);
+
+  const wrap = document.getElementById('payslipPrintWrap');
+  const container = document.createElement('div');
+  container.innerHTML = wrap.innerHTML;
+  applyPrintWatermark(container);
+
+  await callFunction('/api/email-report', {
+    subject: `Payslip — ${payslip.employee_snapshot.first_name} ${payslip.employee_snapshot.last_name}`,
+    html: container.innerHTML
+  });
 }
 
 // Non-highlight rows whose value rounds to zero are dropped entirely on
@@ -894,6 +927,26 @@ payrollDetailTableBody.addEventListener('click', async event => {
   if (printBtn) {
     const payslip = payslips.find(p => p.id === printBtn.dataset.payslipId);
     if (payslip && (await requireReportPasscode())) printPayslip(payslip);
+    return;
+  }
+
+  const emailBtn = event.target.closest('.payslip-email-btn');
+  if (emailBtn) {
+    const payslip = payslips.find(p => p.id === emailBtn.dataset.payslipId);
+    if (!payslip || !(await requireReportPasscode())) return;
+    payrollDetailError.hidden = true;
+    payrollDetailInfo.hidden = true;
+    emailBtn.disabled = true;
+    try {
+      await emailPayslip(payslip);
+      payrollDetailInfo.textContent = `Payslip emailed to your registered email address.`;
+      payrollDetailInfo.hidden = false;
+    } catch (err) {
+      payrollDetailError.textContent = err.message || 'Could not email this payslip.';
+      payrollDetailError.hidden = false;
+    } finally {
+      emailBtn.disabled = false;
+    }
     return;
   }
 
@@ -1107,6 +1160,7 @@ async function printMusterRoll() {
 
     const wrap = document.getElementById('musterRollPrintWrap');
     wrap.innerHTML = buildMusterRollHtml(currentRunMeta, currentRunPayslips, { businessName: settingsRow?.business_name, logoUrl: settingsRow?.business_logo_url });
+    applyPrintWatermark(wrap);
 
     // @page size is a page-level rule, not scopable by a body class, so
     // it's injected just for this print and removed right after —
@@ -1137,6 +1191,36 @@ async function printMusterRoll() {
 
 musterRollBtn.addEventListener('click', async () => {
   if (await requireReportPasscode()) printMusterRoll();
+});
+
+// Generates the exact same HTML as printMusterRoll() but never hands it
+// to the browser for a local save -- it's relayed server-side straight
+// to the signed-in owner's own registered email (api/email-report.js
+// determines the recipient itself from the auth token; it can't be
+// pointed at an arbitrary address).
+async function emailMusterRoll() {
+  if (!currentRunId || !currentRunMeta) return;
+  musterRollEmailBtn.disabled = true;
+  payrollDetailError.hidden = true;
+  payrollDetailInfo.hidden = true;
+  try {
+    const { data: settingsRow } = await supabase.from('payroll_settings').select('business_name, business_logo_url').maybeSingle();
+    const container = document.createElement('div');
+    container.innerHTML = buildMusterRollHtml(currentRunMeta, currentRunPayslips, { businessName: settingsRow?.business_name, logoUrl: settingsRow?.business_logo_url });
+    applyPrintWatermark(container);
+    await callFunction('/api/email-report', { subject: `Muster roll — ${currentRunMeta.period_label}`, html: container.innerHTML });
+    payrollDetailInfo.textContent = 'Muster roll emailed to your registered email address.';
+    payrollDetailInfo.hidden = false;
+  } catch (err) {
+    payrollDetailError.textContent = err.message || 'Could not email the muster roll.';
+    payrollDetailError.hidden = false;
+  } finally {
+    musterRollEmailBtn.disabled = false;
+  }
+}
+
+musterRollEmailBtn.addEventListener('click', async () => {
+  if (await requireReportPasscode()) emailMusterRoll();
 });
 
 document.addEventListener('app:page', event => {

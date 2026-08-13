@@ -1,5 +1,6 @@
-import { supabase } from './auth.js';
+import { supabase, callFunction } from './auth.js';
 import { requireReportPasscode } from './reportPasscode.js';
+import { applyPrintWatermark } from './watermark.js';
 
 const { toNumber } = window.PayrollShared;
 
@@ -106,6 +107,9 @@ const leaveHolidaysEmptyState = document.getElementById('leaveHolidaysEmptyState
 const leaveHolidaysTableBody = document.getElementById('leaveHolidaysTableBody');
 
 const printLeaveBalancesBtn = document.getElementById('printLeaveBalancesBtn');
+const emailLeaveBalancesBtn = document.getElementById('emailLeaveBalancesBtn');
+const leaveBalancesError = document.getElementById('leaveBalancesError');
+const leaveBalancesInfo = document.getElementById('leaveBalancesInfo');
 const refreshLeaveBalancesBtn = document.getElementById('refreshLeaveBalancesBtn');
 const leaveBalancesDept = document.getElementById('leaveBalancesDept');
 const leaveBalancesSubDept = document.getElementById('leaveBalancesSubDept');
@@ -1492,6 +1496,7 @@ printLeaveBalancesBtn.addEventListener('click', async () => {
   if (!(await requireReportPasscode())) return;
   const wrap = document.getElementById('leaveBalancePrintWrap');
   wrap.innerHTML = buildLeaveBalancesPrintHtml();
+  applyPrintWatermark(wrap);
 
   // margin: 0 (not the usual 10mm) so Chrome/Edge have no room left to
   // draw their default header/footer (page title + URL) — .muster-page
@@ -1509,6 +1514,30 @@ printLeaveBalancesBtn.addEventListener('click', async () => {
   wrap.hidden = true;
   pageStyle.remove();
   document.title = originalTitle;
+});
+
+// Never hands the report to the browser for a local save -- relayed
+// server-side straight to the signed-in owner's own registered email
+// (api/email-report.js determines the recipient itself from the auth
+// token, so this can't be pointed at an arbitrary address).
+emailLeaveBalancesBtn.addEventListener('click', async () => {
+  leaveBalancesError.hidden = true;
+  leaveBalancesInfo.hidden = true;
+  if (!(await requireReportPasscode())) return;
+  emailLeaveBalancesBtn.disabled = true;
+  try {
+    const container = document.createElement('div');
+    container.innerHTML = buildLeaveBalancesPrintHtml();
+    applyPrintWatermark(container);
+    await callFunction('/api/email-report', { subject: 'Leave balances report', html: container.innerHTML });
+    leaveBalancesInfo.textContent = 'Leave balances report emailed to your registered email address.';
+    leaveBalancesInfo.hidden = false;
+  } catch (err) {
+    leaveBalancesError.textContent = err.message || 'Could not email this report.';
+    leaveBalancesError.hidden = false;
+  } finally {
+    emailLeaveBalancesBtn.disabled = false;
+  }
 });
 
 // ---------------------------------------------------------------------

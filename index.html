@@ -812,6 +812,10 @@
               <svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5M9 13h6M9 17h6M9 9h2"/></svg>
               Muster roll
             </button>
+            <button type="button" class="ghost-button" id="musterRollEmailBtn" hidden title="Only available once this run is approved or processed">
+              <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M22 6l-10 7L2 6"/></svg>
+              Email muster roll
+            </button>
             <button type="button" class="ghost-button" id="payrollDetailBackBtn">
               <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
               Back to payroll
@@ -1105,8 +1109,14 @@
               <svg viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
               Print report
             </button>
+            <button type="button" class="ghost-button" id="emailLeaveBalancesBtn">
+              <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M22 6l-10 7L2 6"/></svg>
+              Email report
+            </button>
           </div>
         </div>
+        <p class="auth-error" id="leaveBalancesError" hidden></p>
+        <p class="auth-info" id="leaveBalancesInfo" hidden></p>
         <div class="field-grid two-col">
           <label>Department <select id="leaveBalancesDept"><option value="">All departments</option></select></label>
           <label>Sub department <select id="leaveBalancesSubDept"><option value="">All sub departments</option></select></label>

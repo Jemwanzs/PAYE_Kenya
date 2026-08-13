@@ -650,6 +650,7 @@ textarea {
 
 .business-expand-row td { background: var(--card-2); padding: 14px clamp(10px, 3vw, 20px) 18px; }
 .business-block-btn { margin-left: 8px; }
+.payslip-email-btn { margin-left: 8px; }
 
 .net-card-classification {
   display: block;
@@ -1926,4 +1927,35 @@ body.printing-leave-balances #leaveBalancePrintWrap { display: block; }
   .leave-calendar-grid { gap: 4px; }
   .leave-calendar-cell { min-height: 60px; padding: 4px 5px; }
   .leave-calendar-headcell { font-size: .6rem; }
+}
+
+/* Watermarking -- a leak deterrent, not a screenshot block (nothing on
+   the web can actually block a screenshot). See watermark.js. */
+#appWatermarkOverlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 40;
+}
+.screen-watermark {
+  position: absolute;
+  transform: rotate(-28deg);
+  font-size: .72rem;
+  font-weight: 700;
+  color: rgba(32, 20, 13, .05);
+  white-space: nowrap;
+  user-select: none;
+}
+.print-watermark {
+  position: absolute;
+  transform: rotate(-28deg);
+  font-size: .78rem;
+  font-weight: 700;
+  color: rgba(32, 20, 13, .14);
+  white-space: nowrap;
+  pointer-events: none;
+}
+@media print {
+  .screen-watermark { display: none; }
 }
