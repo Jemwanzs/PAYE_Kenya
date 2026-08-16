@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { supabaseAdmin } = require('./_supabaseAdmin');
+const { firestoreAdmin } = require('./_firebaseAdmin');
 const { amountForDays, DAY_MS } = require('./_dayPackages');
 
 module.exports.config = { api: { bodyParser: false } };
@@ -13,22 +13,26 @@ function readRawBody(req) {
   });
 }
 
-async function extendAccess({ supabaseUserId, email, days }) {
-  let selectQuery = supabaseAdmin.from('profiles').select('access_expires_at');
-  selectQuery = supabaseUserId ? selectQuery.eq('id', supabaseUserId) : selectQuery.eq('email', email);
-  const { data: profile, error: fetchError } = await selectQuery.single();
-  if (fetchError) throw fetchError;
+async function extendAccess({ firebaseUserId, email, days }) {
+  let profileRef;
+  let profile;
+  if (firebaseUserId) {
+    profileRef = firestoreAdmin.collection('profiles').doc(firebaseUserId);
+    const snap = await profileRef.get();
+    if (!snap.exists) throw new Error('Profile not found');
+    profile = snap.data();
+  } else {
+    const query = await firestoreAdmin.collection('profiles').where('email', '==', email).limit(1).get();
+    if (query.empty) throw new Error('Profile not found');
+    profileRef = query.docs[0].ref;
+    profile = query.docs[0].data();
+  }
 
   const now = Date.now();
-  const currentExpiry = profile?.access_expires_at ? new Date(profile.access_expires_at).getTime() : 0;
+  const currentExpiry = profile?.accessExpiresAt ? new Date(profile.accessExpiresAt).getTime() : 0;
   const newExpiry = new Date(Math.max(currentExpiry, now) + days * DAY_MS).toISOString();
 
-  let updateQuery = supabaseAdmin
-    .from('profiles')
-    .update({ access_expires_at: newExpiry, updated_at: new Date().toISOString() });
-  updateQuery = supabaseUserId ? updateQuery.eq('id', supabaseUserId) : updateQuery.eq('email', email);
-  const { error } = await updateQuery;
-  if (error) throw error;
+  await profileRef.update({ accessExpiresAt: newExpiry, updatedAt: new Date().toISOString() });
 }
 
 module.exports = async function handler(req, res) {
@@ -73,7 +77,7 @@ module.exports = async function handler(req, res) {
 
   try {
     await extendAccess({
-      supabaseUserId: data.metadata?.supabase_user_id,
+      firebaseUserId: data.metadata?.firebase_user_id,
       email: data.customer?.email,
       days
     });

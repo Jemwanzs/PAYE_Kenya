@@ -1,11 +1,10 @@
-import { supabase, TRIAL_DAYS, EXTENDED_TRIAL_EMAILS } from './auth.js';
+import { callFunction, TRIAL_DAYS, EXTENDED_TRIAL_EMAILS } from './auth.js';
 
-// Admin-only cross-tenant business/user management (see
-// migrate_admin_business_controls.sql). Every read/write here goes
-// through an admin-gated RPC, not a direct table query -- a non-admin
-// session just gets an empty result / a rejected RPC call, same
-// RLS-style "no special client-side check needed" shape as the session
-// logs page.
+// Admin-only cross-tenant business/user management. Every read/write
+// here goes through an admin-gated serverless endpoint (Admin SDK,
+// bypassing Firestore rules entirely), not a direct client query -- a
+// non-admin session just gets an empty result / a rejected call, same
+// "no special client-side check needed" shape as the session logs page.
 
 const errorEl = document.getElementById('businessesError');
 const emptyState = document.getElementById('businessesEmptyState');
@@ -65,13 +64,13 @@ function fmtDate(iso) {
 }
 
 function statusBadge(row) {
-  if (row.is_blocked) return '<span class="status-pill status-terminated">Blocked</span>';
-  if (row.is_admin) return '<span class="status-pill status-active">Admin</span>';
+  if (row.isBlocked) return '<span class="status-pill status-terminated">Blocked</span>';
+  if (row.isAdmin) return '<span class="status-pill status-active">Admin</span>';
   const now = Date.now();
   const dayMs = 24 * 60 * 60 * 1000;
   const trialDays = EXTENDED_TRIAL_EMAILS[row.email] ?? TRIAL_DAYS;
-  const trialEndsAt = new Date(row.trial_started_at).getTime() + trialDays * dayMs;
-  const paidUntil = row.access_expires_at ? new Date(row.access_expires_at).getTime() : 0;
+  const trialEndsAt = new Date(row.trialStartedAt).getTime() + trialDays * dayMs;
+  const paidUntil = row.accessExpiresAt ? new Date(row.accessExpiresAt).getTime() : 0;
   if (now < paidUntil) return '<span class="status-pill status-active">Paid</span>';
   if (now < trialEndsAt) return '<span class="status-pill status-active">Trial</span>';
   return '<span class="status-pill status-terminated">Expired</span>';
@@ -82,9 +81,8 @@ async function loadBusinesses({ force = false } = {}) {
   errorEl.hidden = true;
   refreshBtn.disabled = true;
   try {
-    const { data, error } = await supabase.rpc('admin_list_businesses');
-    if (error) throw error;
-    businessesCache = data || [];
+    const { businesses } = await callFunction('/api/admin-list-businesses');
+    businessesCache = businesses || [];
     businessesLoaded = true;
     renderTable();
   } catch (err) {
@@ -98,14 +96,14 @@ async function loadBusinesses({ force = false } = {}) {
 function employeeRowHtml(e) {
   const statusLabel = e.status === 'terminated' ? 'Terminated' : 'Active';
   const statusClass = e.status === 'terminated' ? 'terminated' : 'active';
-  const portalLabel = !e.auth_user_id ? 'No portal access' : (e.portal_blocked ? 'Blocked' : 'Active');
-  const portalActionBtn = e.auth_user_id
-    ? `<button type="button" class="ghost-button employee-block-btn" data-id="${e.id}" data-blocked="${e.portal_blocked}">${e.portal_blocked ? 'Unblock portal' : 'Block portal'}</button>`
+  const portalLabel = !e.authUserId ? 'No portal access' : (e.portalBlocked ? 'Blocked' : 'Active');
+  const portalActionBtn = e.authUserId
+    ? `<button type="button" class="ghost-button employee-block-btn" data-id="${e.id}" data-blocked="${e.portalBlocked}">${e.portalBlocked ? 'Unblock portal' : 'Block portal'}</button>`
     : '';
   return `
     <tr>
-      <td>${e.employee_number || '—'}</td>
-      <td>${e.first_name} ${e.last_name}</td>
+      <td>${e.employeeNumber || '—'}</td>
+      <td>${e.firstName} ${e.lastName}</td>
       <td>${e.email || '—'}</td>
       <td><span class="status-pill status-${statusClass}">${statusLabel}</span></td>
       <td>${portalLabel}</td>
@@ -114,7 +112,7 @@ function employeeRowHtml(e) {
   `;
 }
 
-function expandedRowHtml(row) {
+function expandedRowHtml() {
   const rows = expandedEmployees.length
     ? expandedEmployees.map(employeeRowHtml).join('')
     : '<tr><td colspan="6" class="hint">No employees for this business yet.</td></tr>';
@@ -139,26 +137,26 @@ function renderTable() {
   const rows = businessesCache.filter(row =>
     !search ||
     (row.email || '').toLowerCase().includes(search) ||
-    (row.business_name || '').toLowerCase().includes(search)
+    (row.businessName || '').toLowerCase().includes(search)
   );
 
   emptyState.hidden = rows.length > 0;
 
   tableBody.innerHTML = rows.map(row => {
     const mainRow = `
-      <tr class="business-row" data-user-id="${row.user_id}">
-        <td>${row.business_name || '(no business name set)'}</td>
+      <tr class="business-row" data-user-id="${row.userId}">
+        <td>${row.businessName || '(no business name set)'}</td>
         <td>${row.email || '—'}</td>
         <td>${statusBadge(row)}</td>
-        <td>${row.employee_count}</td>
-        <td>${fmtDate(row.created_at)}</td>
+        <td>${row.employeeCount}</td>
+        <td>${fmtDate(row.createdAt)}</td>
         <td>
-          <button type="button" class="ghost-button business-expand-btn" data-user-id="${row.user_id}">${expandedUserId === row.user_id ? 'Hide employees' : 'View employees'}</button>
-          ${row.is_admin ? '' : `<button type="button" class="ghost-button business-block-btn" data-user-id="${row.user_id}" data-email="${row.email || ''}" data-blocked="${row.is_blocked}">${row.is_blocked ? 'Unblock' : 'Block'}</button>`}
+          <button type="button" class="ghost-button business-expand-btn" data-user-id="${row.userId}">${expandedUserId === row.userId ? 'Hide employees' : 'View employees'}</button>
+          ${row.isAdmin ? '' : `<button type="button" class="ghost-button business-block-btn" data-user-id="${row.userId}" data-email="${row.email || ''}" data-blocked="${row.isBlocked}">${row.isBlocked ? 'Unblock' : 'Block'}</button>`}
         </td>
       </tr>
     `;
-    return expandedUserId === row.user_id ? mainRow + expandedRowHtml(row) : mainRow;
+    return expandedUserId === row.userId ? mainRow + expandedRowHtml() : mainRow;
   }).join('');
 }
 
@@ -172,23 +170,25 @@ async function toggleExpand(userId) {
   expandedUserId = userId;
   expandedEmployees = [];
   renderTable();
-  const { data, error } = await supabase.rpc('admin_list_employees', { p_owner_user_id: userId });
-  if (!error) expandedEmployees = data || [];
+  try {
+    const { employees } = await callFunction('/api/admin-list-employees', { ownerUserId: userId });
+    expandedEmployees = employees || [];
+  } catch {
+    expandedEmployees = [];
+  }
   renderTable();
 }
 
 async function setEmployeeBlocked(employeeId, blocked) {
-  const { error } = await supabase.rpc('admin_set_employee_blocked', { p_employee_id: employeeId, p_blocked: blocked });
-  if (error) throw error;
-  const { data } = await supabase.rpc('admin_list_employees', { p_owner_user_id: expandedUserId });
-  expandedEmployees = data || [];
+  await callFunction('/api/admin-set-employee-blocked', { ownerUserId: expandedUserId, employeeId, blocked });
+  const { employees } = await callFunction('/api/admin-list-employees', { ownerUserId: expandedUserId });
+  expandedEmployees = employees || [];
   renderTable();
 }
 
 function setBusinessBlocked(userId, blocked) {
   return async () => {
-    const { error } = await supabase.rpc('admin_set_business_blocked', { p_user_id: userId, p_blocked: blocked });
-    if (error) throw error;
+    await callFunction('/api/admin-set-business-blocked', { userId, blocked });
     await loadBusinesses({ force: true });
   };
 }

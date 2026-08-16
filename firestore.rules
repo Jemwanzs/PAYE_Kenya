@@ -1,0 +1,171 @@
+rules_version = '2';
+
+// Direct translation of every RLS policy in supabase/schema.sql (kept
+// there for historical reference; Supabase is no longer used). The
+// mapping:
+//   auth.uid() = user_id            -> request.auth.uid == ownerUid (path segment)
+//   employees.auth_user_id=auth.uid() with owner_user_id lookup
+//                                    -> request.auth.token.ownerUserId / .employeeId
+//                                       (custom claims set at signup/invite time,
+//                                       mirroring the profiles.owner_user_id /
+//                                       employees.auth_user_id join Postgres did)
+//   SECURITY DEFINER RPC             -> a /api/*.js serverless function using the
+//                                       Admin SDK (bypasses these rules entirely,
+//                                       same as SECURITY DEFINER bypassed RLS)
+//
+// Cross-tenant "approver visibility" reads (an approver seeing the
+// applicant's name, or the payroll run/payslips they're assigned to
+// approve) are NOT expressed as rules here, same reasoning the old
+// schema had for using narrow SECURITY DEFINER functions instead of a
+// broad policy: routed through api/get-approval-items.js instead.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Mirrors "select_own_profile". No client write policy at all
+    // (mirrors "Deliberately no insert/update/delete policy for
+    // authenticated" -- profile writes only ever happen via
+    // api/complete-signup.js / api/invite-employee.js / the admin
+    // block endpoints, all Admin SDK, all bypassing these rules).
+    match /profiles/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /businesses/{ownerUid} {
+
+      function isOwner() {
+        return request.auth != null && request.auth.uid == ownerUid;
+      }
+      function isActiveEmployee() {
+        return request.auth != null
+          && request.auth.token.role == 'employee'
+          && request.auth.token.ownerUserId == ownerUid;
+      }
+
+      match /settings/{docId} {
+        allow read: if isOwner() || isActiveEmployee();
+        allow write: if isOwner();
+      }
+
+      // Employee read is their own doc only (mirrors
+      // employee_read_own_employee_record). Approver visibility into
+      // OTHER employees' records is routed through
+      // api/get-approval-items.js instead of a broader rule here.
+      match /employees/{employeeId} {
+        allow read: if isOwner() || (isActiveEmployee() && employeeId == request.auth.token.employeeId);
+        allow write: if isOwner();
+      }
+
+      match /employeeCompensationItems/{id} {
+        allow read, write: if isOwner();
+      }
+
+      // Simplification vs. the old employee_read_own_payroll_runs
+      // policy, which additionally required the employee to actually
+      // have a payslip in that specific run: here any active employee
+      // can read basic metadata (period label/dates/status) of any
+      // approved/processed run in their own business. Not a meaningful
+      // exposure -- period metadata isn't sensitive; the actual pay
+      // figures live in payslips below, which DOES keep the precise
+      // per-employee restriction. The app's own client code only ever
+      // reads runs it already derived from the employee's own payslips
+      // anyway, so this never surfaces anything extra in practice.
+      match /payrollRuns/{id} {
+        allow read: if isOwner() || (isActiveEmployee() && resource.data.status in ['approved', 'processed']);
+        allow write: if isOwner();
+      }
+
+      match /payslips/{id} {
+        allow read: if isOwner() || (isActiveEmployee() && resource.data.employeeId == request.auth.token.employeeId);
+        allow write: if isOwner();
+      }
+
+      match /leaveTypes/{id} {
+        allow read: if isOwner() || isActiveEmployee();
+        allow write: if isOwner();
+      }
+
+      match /publicHolidays/{id} {
+        allow read: if isOwner() || isActiveEmployee();
+        allow write: if isOwner();
+      }
+
+      // No client create at all (for either owner or employee) --
+      // routed through api/create-leave-application.js instead, which
+      // creates the application AND its approvalActions in the same
+      // request/response cycle (see that file for why a direct client
+      // write here can't offer the same guarantee). No employee update
+      // policy either -- decisions only ever go through
+      // api/record-approval-decision.js.
+      match /leaveApplications/{id} {
+        allow read: if isOwner() || (isActiveEmployee() && resource.data.employeeId == request.auth.token.employeeId);
+        allow create: if false;
+        allow update, delete: if isOwner();
+      }
+
+      match /leaveBalanceAdjustments/{id} {
+        allow read: if isOwner() || (isActiveEmployee() && resource.data.employeeId == request.auth.token.employeeId);
+        allow write: if isOwner();
+      }
+
+      // Doc id is the action_type itself ('payroll_run' | 'leave_application')
+      // -- Postgres needed a generated id + a separate unique(user_id,
+      // action_type) constraint for the same one-workflow-per-type rule;
+      // using the type as the doc id gets that uniqueness for free.
+      match /approvalWorkflows/{actionType} {
+        allow read, write: if isOwner();
+
+        // Doc id is the employeeId itself, same reasoning (replaces
+        // unique(workflow_id, employee_id)).
+        match /approvers/{employeeId} {
+          allow read: if isOwner() || (isActiveEmployee() && employeeId == request.auth.token.employeeId);
+          allow write: if isOwner();
+        }
+      }
+
+      // An approver's own assignment rows are readable directly; the
+      // decision write itself and the "everything I'm assigned to
+      // approve" cross-record join both go through
+      // api/record-approval-decision.js / api/get-approval-items.js
+      // (Admin SDK) -- mirrors record_approval_decision() /
+      // approver_assigned_*_ids() being SECURITY DEFINER rather than a
+      // raw RLS policy in the old schema.
+      match /approvalActions/{id} {
+        allow read: if isOwner() || (isActiveEmployee() && resource.data.employeeId == request.auth.token.employeeId);
+        allow write: if isOwner();
+      }
+
+      // Employee update is restricted to flipping isRead only --
+      // stricter than the old recipient_update_own_notifications policy
+      // (which scoped by row but not by field), a free tightening since
+      // the app's client code only ever sets isRead anyway.
+      match /notifications/{id} {
+        allow read: if isOwner() || (isActiveEmployee() && resource.data.recipientEmployeeId == request.auth.token.employeeId);
+        allow update: if isOwner() || (
+          isActiveEmployee()
+          && resource.data.recipientEmployeeId == request.auth.token.employeeId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+        );
+        allow create, delete: if isOwner();
+      }
+    }
+
+    // Any signed-in user can create their own row (mirrors
+    // insert_own_session_log); only the platform admin can read any of
+    // them (mirrors admin_read_all_session_logs). isAdmin is a custom
+    // claim, not a Firestore lookup, so this never needs a get().
+    match /sessionLogs/{id} {
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read: if request.auth != null && request.auth.token.isAdmin == true;
+      allow update, delete: if false;
+    }
+
+    // No policies at all in the old schema -- only the service-role key
+    // ever touched this table. Mirrored exactly: deny every client
+    // read/write; only Admin SDK (api/send-login-otp.js /
+    // api/verify-login-otp.js) can touch this collection.
+    match /loginOtps/{id} {
+      allow read, write: if false;
+    }
+  }
+}

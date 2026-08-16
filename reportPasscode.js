@@ -1,9 +1,10 @@
-import { supabase } from './auth.js';
+import { auth, db } from './auth.js';
+import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // ---------------------------------------------------------------------
 // Optional per-business passcode gate in front of report downloads
 // (payslip print, muster roll print, leave-balance print). Opt-in: a
-// business with no passcode configured (report_passcode_hash is null)
+// business with no passcode configured (reportPasscodeHash is null)
 // never sees the modal at all -- requireReportPasscode() resolves true
 // immediately. Only ever hashed client-side (SHA-256, salted with the
 // owner's own user_id) -- the plaintext passcode never touches the
@@ -23,7 +24,7 @@ export async function hashReportPasscode(passcode, userId) {
 }
 
 // Cached per signed-in user for the duration of the session so every
-// report click doesn't re-fetch payroll_settings. Invalidated explicitly
+// report click doesn't re-fetch the settings doc. Invalidated explicitly
 // by employees.js right after the passcode is changed/cleared in
 // Settings, so a gated download later in the same session never checks
 // against a stale hash.
@@ -35,12 +36,12 @@ export function invalidateReportPasscodeCache() {
 }
 
 async function loadPasscodeHash() {
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = auth.currentUser;
   if (!user) return null;
-  if (cachedHash !== undefined && cachedUserId === user.id) return cachedHash;
-  const { data } = await supabase.from('payroll_settings').select('report_passcode_hash').eq('user_id', user.id).maybeSingle();
-  cachedHash = data?.report_passcode_hash || null;
-  cachedUserId = user.id;
+  if (cachedHash !== undefined && cachedUserId === user.uid) return cachedHash;
+  const snap = await getDoc(doc(db, 'businesses', user.uid, 'settings', 'main'));
+  cachedHash = snap.exists() ? (snap.data().reportPasscodeHash || null) : null;
+  cachedUserId = user.uid;
   return cachedHash;
 }
 
@@ -66,8 +67,8 @@ function closeModal(result) {
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
-  const { data: { user } } = await supabase.auth.getUser();
-  const attempt = await hashReportPasscode(input.value, user.id);
+  const user = auth.currentUser;
+  const attempt = await hashReportPasscode(input.value, user.uid);
   if (attempt === cachedHash) {
     closeModal(true);
     return;

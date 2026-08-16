@@ -1,12 +1,23 @@
-import { supabase } from './auth.js';
+import { db, callFunction } from './auth.js';
 import { printPayslip } from './payroll.js';
 import {
   loadCoreLeaveData, computeLeaveBalanceBreakdown, countWorkingDays, findConflictingLeaveApplication, todayStr,
-  derivedStatus, statusPillClass, statusLabel,
+  derivedStatus, statusPillClass, statusLabel, setLeaveViewerIsEmployee,
   employeesCache, leaveTypesCache, applicationsCache
 } from './leave.js';
+import {
+  collection, doc, getDoc, getDocs, query, where, orderBy, updateDoc
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 const { classificationLabels, money } = window.PayrollShared;
+
+// This file only ever runs inside the employee portal (never the owner
+// dashboard), so leave.js's shared data loader is told once, up front,
+// to fetch through api/get-leave-data.js instead of the owner's direct
+// Firestore reads -- see that file's top-of-file comment for why a plain
+// collection query can't work for an employee session under
+// firestore.rules.
+setLeaveViewerIsEmployee(true);
 
 const payslipsError = document.getElementById('employeePortalPayslipsError');
 const payslipsEmpty = document.getElementById('employeePortalPayslipsEmpty');
@@ -44,11 +55,18 @@ const leaveApprovalsList = document.getElementById('employeePortalLeaveApprovals
 const leaveApprovalsRefreshBtn = document.getElementById('employeePortalLeaveApprovalsRefreshBtn');
 
 let currentEmployee = null;
+let currentOwnerUid = null;
+let currentEmployeeId = null;
 let isLeaveApprover = false;
 let isPayrollApprover = false;
 
+function ownerCollection(...pathSegments) { return collection(db, 'businesses', currentOwnerUid, ...pathSegments); }
+function ownerDoc(...pathSegments) { return doc(db, 'businesses', currentOwnerUid, ...pathSegments); }
+
 document.addEventListener('employee-portal:ready', event => {
   currentEmployee = event.detail.employee;
+  currentOwnerUid = event.detail.claims.ownerUserId;
+  currentEmployeeId = event.detail.claims.employeeId;
   renderDetails(currentEmployee);
   renderPayslips();
   checkApproverRoles();
@@ -67,38 +85,45 @@ function renderDetails(employee) {
   if (!employee) return;
   const genderLabel = employee.gender ? employee.gender.charAt(0).toUpperCase() + employee.gender.slice(1) : '—';
   const fields = [
-    ['First name', employee.first_name],
-    ['Last name', employee.last_name],
+    ['First name', employee.firstName],
+    ['Last name', employee.lastName],
     ['Email', employee.email || '—'],
     ['Phone', employee.phone || '—'],
     ['Gender', genderLabel],
-    ['Job position', employee.job_position || '—'],
+    ['Job position', employee.jobPosition || '—'],
     ['Department', employee.department || '—'],
-    ['Sub department', employee.sub_department || '—'],
-    ['Employee type', classificationLabels[employee.employee_type] || employee.employee_type],
-    ['Contract start date', employee.contract_start_date || '—']
+    ['Sub department', employee.subDepartment || '—'],
+    ['Employee type', classificationLabels[employee.employeeType] || employee.employeeType],
+    ['Contract start date', employee.contractStartDate || '—']
   ];
-  // Deliberately excludes employee.compensation/statutory_toggles -- pay
+  // Deliberately excludes employee.compensation/statutoryToggles -- pay
   // figures are only ever surfaced via the employee's own payslips, never
   // as a raw compensation-config screen.
   detailsGrid.innerHTML = fields.map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
 }
 
+// A payslip only ever surfaces here once its run has been approved (or
+// processed) -- mirrors the previous RLS-enforced behavior of never
+// exposing unapproved pay figures to the employee it belongs to.
+// firestore.rules blocks an employee from reading a still-draft
+// payrollRuns doc at all, so rather than risk a permission-denied error
+// on an individual per-run lookup, every approved/processed run for the
+// business is fetched once and payslips are filtered against that set.
 async function renderPayslips() {
   payslipsError.hidden = true;
   payslipsRefreshBtn.disabled = true;
   try {
-    const { data: payslips, error } = await supabase.from('payslips').select('*').order('created_at', { ascending: false });
-    if (error) throw error;
-    const rows = payslips || [];
+    const [payslipsSnap, runsSnap] = await Promise.all([
+      getDocs(query(ownerCollection('payslips'), where('employeeId', '==', currentEmployeeId))),
+      getDocs(query(ownerCollection('payrollRuns'), where('status', 'in', ['approved', 'processed'])))
+    ]);
+    const runById = new Map(runsSnap.docs.map(d => [d.id, d.data()]));
 
-    const runIds = [...new Set(rows.map(p => p.payroll_run_id))];
-    if (runIds.length) {
-      const { data: runs, error: runsError } = await supabase.from('payroll_runs').select('id, period_label').in('id', runIds);
-      if (runsError) throw runsError;
-      const runById = new Map((runs || []).map(r => [r.id, r]));
-      rows.forEach(p => { p.period_label = runById.get(p.payroll_run_id)?.period_label || ''; });
-    }
+    const rows = payslipsSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(p => runById.has(p.payrollRunId))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    rows.forEach(p => { p.period_label = runById.get(p.payrollRunId)?.periodLabel || ''; });
 
     payslipsEmpty.hidden = rows.length > 0;
     payslipsTableBody.innerHTML = rows.map(p => `
@@ -108,7 +133,13 @@ async function renderPayslips() {
         <td><button type="button" class="ghost-button employee-portal-payslip-btn" data-id="${p.id}">View / Print</button></td>
       </tr>
     `).join('');
-    payslipsTableBody.dataset.payslips = JSON.stringify(rows);
+    payslipsTableBody.dataset.payslips = JSON.stringify(rows.map(p => ({
+      id: p.id,
+      employee_snapshot: p.employeeSnapshot,
+      compensation_snapshot: p.compensationSnapshot,
+      results: p.results,
+      period_label: p.period_label
+    })));
   } catch (err) {
     payslipsError.textContent = err.message || 'Could not load your payslips.';
     payslipsError.hidden = false;
@@ -133,11 +164,10 @@ async function renderLeaveTab() {
   try {
     await loadCoreLeaveData({ force: true });
 
-    // employeesCache can also contain applicant rows visible to this
-    // employee via an approver-visibility policy (see auth.js's
-    // renderEmployeePortal for the full explanation) -- currentEmployee
+    // employeesCache can also contain other employees' rows (needed so
+    // the team leave calendar can show who's on leave) -- currentEmployee
     // is the one explicitly, uniquely scoped to this session's own
-    // auth_user_id, so it's the only safe way to identify "myself" here.
+    // claims, so it's the only safe way to identify "myself" here.
     const employee = currentEmployee;
     if (!employee) {
       leaveError.textContent = 'Could not load your leave data. Try refreshing, or contact your employer.';
@@ -166,19 +196,19 @@ leaveRefreshBtn.addEventListener('click', renderLeaveTab);
 
 function renderApplications(employee) {
   const rows = applicationsCache
-    .filter(a => a.employee_id === employee.id)
-    .sort((a, b) => (a.start_date < b.start_date ? 1 : -1));
+    .filter(a => a.employeeId === employee.id)
+    .sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
 
   applicationsEmpty.hidden = rows.length > 0;
   applicationsTableBody.innerHTML = rows.map(a => {
-    const type = leaveTypesCache.find(t => t.id === a.leave_type_id);
+    const type = leaveTypesCache.find(t => t.id === a.leaveTypeId);
     const status = derivedStatus(a);
     return `
       <tr>
         <td>${type ? type.name : '—'}</td>
-        <td>${a.start_date}</td>
-        <td>${a.end_date}</td>
-        <td>${Number(a.days_requested).toFixed(2)}</td>
+        <td>${a.startDate}</td>
+        <td>${a.endDate}</td>
+        <td>${Number(a.daysRequested).toFixed(2)}</td>
         <td><span class="status-pill status-${statusPillClass[status]}">${statusLabel[status]}</span></td>
       </tr>
     `;
@@ -196,7 +226,7 @@ function updateApplyPreview() {
   const balanceBefore = computeLeaveBalanceBreakdown(employee, type, applyStart.value).balance;
   const balanceAfter = balanceBefore - days;
   applyPreview.textContent =
-    `This request is ${days} working day(s). Current balance: ${balanceBefore.toFixed(2)} day(s). Balance after: ${balanceAfter.toFixed(2)} day(s)${type.allow_negative_balance ? '' : (balanceAfter < 0 ? ' — exceeds available balance' : '')}.`;
+    `This request is ${days} working day(s). Current balance: ${balanceBefore.toFixed(2)} day(s). Balance after: ${balanceAfter.toFixed(2)} day(s)${type.allowNegativeBalance ? '' : (balanceAfter < 0 ? ' — exceeds available balance' : '')}.`;
 }
 
 [applyType, applyStart, applyEnd].forEach(el => el.addEventListener('change', updateApplyPreview));
@@ -219,14 +249,14 @@ applyForm.addEventListener('submit', async event => {
   }
   const conflict = findConflictingLeaveApplication(employee.id, applyStart.value, applyEnd.value);
   if (conflict) {
-    const conflictType = leaveTypesCache.find(t => t.id === conflict.leave_type_id);
-    applyError.textContent = `You already have a ${conflict.status} ${conflictType ? conflictType.name : 'leave'} request covering ${conflict.start_date}${conflict.end_date !== conflict.start_date ? ` to ${conflict.end_date}` : ''}.`;
+    const conflictType = leaveTypesCache.find(t => t.id === conflict.leaveTypeId);
+    applyError.textContent = `You already have a ${conflict.status} ${conflictType ? conflictType.name : 'leave'} request covering ${conflict.startDate}${conflict.endDate !== conflict.startDate ? ` to ${conflict.endDate}` : ''}.`;
     applyError.hidden = false;
     return;
   }
   const noticeDays = Math.ceil((new Date(`${applyStart.value}T00:00:00`) - new Date(`${todayStr()}T00:00:00`)) / 86400000);
-  if (noticeDays < (type.notice_period_days || 0)) {
-    applyError.textContent = `${type.name} requires at least ${type.notice_period_days} day(s) of notice.`;
+  if (noticeDays < (type.noticePeriodDays || 0)) {
+    applyError.textContent = `${type.name} requires at least ${type.noticePeriodDays} day(s) of notice.`;
     applyError.hidden = false;
     return;
   }
@@ -235,17 +265,13 @@ applyForm.addEventListener('submit', async event => {
 
   applySaveBtn.disabled = true;
   try {
-    const { error } = await supabase.from('leave_applications').insert({
-      user_id: employee.user_id,
-      employee_id: employee.id,
-      leave_type_id: type.id,
-      start_date: applyStart.value,
-      end_date: applyEnd.value,
-      days_requested: daysRequested,
-      reason: applyReason.value.trim() || null,
-      status: 'pending'
+    await callFunction('/api/create-leave-application', {
+      leaveTypeId: type.id,
+      startDate: applyStart.value,
+      endDate: applyEnd.value,
+      daysRequested,
+      reason: applyReason.value.trim() || null
     });
-    if (error) throw error;
 
     applyForm.reset();
     applyPreview.textContent = '';
@@ -270,19 +296,21 @@ applyForm.addEventListener('submit', async event => {
 // realtime/websocket infrastructure.
 // ---------------------------------------------------------------------
 
+// firestore.rules only lets an owner read the workflow's own isActive
+// flag -- an appointed approver's own approvers/{employeeId} doc existing
+// at all is proof enough of the appointment (an owner only ever creates
+// that doc while the workflow it's nested under is active; deactivating
+// removes every approver doc alongside it, see employees.js's
+// saveApprovalWorkflow), so there's no need to separately fetch isActive
+// here the way the old Postgres version needed a second query.
 async function checkApproverRoles() {
   if (!currentEmployee) return;
-  const { data: approverRows } = await supabase.from('approval_workflow_approvers').select('workflow_id').eq('employee_id', currentEmployee.id);
-  const workflowIds = [...new Set((approverRows || []).map(r => r.workflow_id))];
-
-  let actionTypes = [];
-  if (workflowIds.length) {
-    const { data: workflows } = await supabase.from('approval_workflows').select('id, action_type').in('id', workflowIds);
-    actionTypes = (workflows || []).map(w => w.action_type);
-  }
-
-  isPayrollApprover = actionTypes.includes('payroll_run');
-  isLeaveApprover = actionTypes.includes('leave_application');
+  const [payrollApproverSnap, leaveApproverSnap] = await Promise.all([
+    getDoc(ownerDoc('approvalWorkflows', 'payroll_run', 'approvers', currentEmployeeId)),
+    getDoc(ownerDoc('approvalWorkflows', 'leave_application', 'approvers', currentEmployeeId))
+  ]);
+  isPayrollApprover = payrollApproverSnap.exists();
+  isLeaveApprover = leaveApproverSnap.exists();
   approvalsNavBtn.hidden = !isPayrollApprover;
   leaveApprovalsNavBtn.hidden = !isLeaveApprover;
   await refreshApprovalBadges();
@@ -305,29 +333,38 @@ function setNavBadge(btn, count) {
 // The notification bell only reflects *unread* notifications -- it
 // clears the moment a tab is opened, whether or not anything was
 // actually decided. These badges instead reflect the true, persistent
-// pending count straight from approval_actions, so an approver can't
+// pending count straight from approvalActions, so an approver can't
 // lose track of outstanding work just because they've already looked at
 // it once. Refreshed whenever roles are (re)checked and after every
 // tab render (covers both "just opened the tab" and "just decided
 // something", since both paths call render*Tab()).
 async function refreshApprovalBadges() {
   if (!isPayrollApprover && !isLeaveApprover) return;
-  const { data } = await supabase.from('approval_actions').select('action_type').eq('decision', 'pending');
-  const rows = data || [];
-  setNavBadge(approvalsNavBtn, rows.filter(r => r.action_type === 'payroll_run').length);
-  setNavBadge(leaveApprovalsNavBtn, rows.filter(r => r.action_type === 'leave_application').length);
+  const snap = await getDocs(query(
+    ownerCollection('approvalActions'),
+    where('employeeId', '==', currentEmployeeId),
+    where('decision', '==', 'pending')
+  ));
+  const rows = snap.docs.map(d => d.data());
+  setNavBadge(approvalsNavBtn, rows.filter(r => r.actionType === 'payroll_run').length);
+  setNavBadge(leaveApprovalsNavBtn, rows.filter(r => r.actionType === 'leave_application').length);
 }
 
 async function loadNotifications() {
-  const { data } = await supabase.from('notifications').select('*').eq('is_read', false).order('created_at', { ascending: false });
-  const rows = data || [];
+  const snap = await getDocs(query(
+    ownerCollection('notifications'),
+    where('recipientEmployeeId', '==', currentEmployeeId),
+    where('isRead', '==', false),
+    orderBy('createdAt', 'desc')
+  ));
+  const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   notifyCount.hidden = rows.length === 0;
   notifyCount.textContent = String(rows.length);
   notifyEmpty.hidden = rows.length > 0;
   notifyList.innerHTML = rows.map(n => `
-    <button type="button" class="notification-item" data-id="${n.id}" data-link-type="${n.link_type || ''}">
+    <button type="button" class="notification-item" data-id="${n.id}" data-link-type="${n.linkType || ''}">
       ${n.title}
-      <small>${new Date(n.created_at).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</small>
+      <small>${new Date(n.createdAt).toLocaleString('en-KE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</small>
     </button>
   `).join('');
 }
@@ -351,69 +388,41 @@ notifyList.addEventListener('click', async event => {
   const btn = event.target.closest('.notification-item');
   if (!btn) return;
   closeNotifyMenu();
-  await supabase.from('notifications').update({ is_read: true }).eq('id', btn.dataset.id);
+  await updateDoc(ownerDoc('notifications', btn.dataset.id), { isRead: true });
   await loadNotifications();
   const targetPage = btn.dataset.linkType === 'leave_application' ? 'leave-approvals' : 'approvals';
   document.querySelector(`[data-portal-page="${targetPage}"]`)?.click();
 });
 
 // Shared by both the payroll-only Approvals tab and the leave-only "For
-// my approval" section -- takes already-fetched-and-filtered
-// approval_actions rows and builds the same card markup for either.
-// Renders one card per approval_actions row. A still-pending row gets the
-// actionable card (comment + Approve/Reject); an already-decided row
-// (shown in the Leave approvals tab's full history, never in the
-// Payroll approvals tab, which only ever fetches decision='pending')
-// gets a read-only summary of what this approver decided, plus the
-// application's own overall status -- since one approver's decision
+// my approval" section. Unlike the old Supabase version (which joined
+// payroll_runs/leave_applications/employees/leave_types client-side,
+// relying on RLS to scope what came back), the cross-record join now
+// happens entirely server-side in api/get-approval-items.js -- an
+// approver has no direct Firestore read access to another employee's
+// record or name at all (see firestore.rules), so `items` here already
+// arrives fully joined. Renders one card per item. A still-pending
+// action gets the actionable card (comment + Approve/Reject); an
+// already-decided one (shown in the Leave approvals tab's full history,
+// never in the Payroll approvals tab, which only ever fetches pending
+// items) gets a read-only summary of what this approver decided, plus
+// the record's own overall status -- since one approver's decision
 // doesn't necessarily mean the whole thing is resolved yet if more than
 // one approver is required.
-async function buildApprovalItemsHtml(rows) {
-  if (!rows.length) return '';
+function buildApprovalItemsHtml(items, actionType) {
+  if (!items.length) return '';
 
-  const payrollIds = rows.filter(a => a.action_type === 'payroll_run').map(a => a.record_id);
-  const leaveIds = rows.filter(a => a.action_type === 'leave_application').map(a => a.record_id);
-
-  const [runsRes, appsRes, payslipsRes] = await Promise.all([
-    payrollIds.length ? supabase.from('payroll_runs').select('id, period_label').in('id', payrollIds) : { data: [] },
-    leaveIds.length ? supabase.from('leave_applications').select('id, employee_id, leave_type_id, start_date, end_date, days_requested, status').in('id', leaveIds) : { data: [] },
-    // Requires approver_read_assigned_payroll_payslips (see
-    // migrate_approver_payslip_visibility.sql) -- without it this comes
-    // back empty and the payroll card falls back to just the period
-    // label, same as before that migration is run.
-    payrollIds.length ? supabase.from('payslips').select('payroll_run_id, employee_snapshot, results').in('payroll_run_id', payrollIds) : { data: [] }
-  ]);
-  const runById = new Map((runsRes.data || []).map(r => [r.id, r]));
-  const apps = appsRes.data || [];
-  const payslipsByRunId = new Map();
-  (payslipsRes.data || []).forEach(p => {
-    const list = payslipsByRunId.get(p.payroll_run_id) || [];
-    list.push(p);
-    payslipsByRunId.set(p.payroll_run_id, list);
-  });
-
-  const employeeIds = [...new Set(apps.map(a => a.employee_id))];
-  const leaveTypeIds = [...new Set(apps.map(a => a.leave_type_id))];
-  const [employeesRes, typesRes] = await Promise.all([
-    employeeIds.length ? supabase.from('employees').select('id, first_name, last_name').in('id', employeeIds) : { data: [] },
-    leaveTypeIds.length ? supabase.from('leave_types').select('id, name').in('id', leaveTypeIds) : { data: [] }
-  ]);
-  const employeeById = new Map((employeesRes.data || []).map(e => [e.id, e]));
-  const typeById = new Map((typesRes.data || []).map(t => [t.id, t]));
-  const appById = new Map(apps.map(a => [a.id, a]));
-
-  return rows.map(action => {
+  return items.map(({ action, run, payslips, application, employee, leaveType }) => {
     let summary = 'Record no longer available';
     let overallStatus = '';
     let breakdownHtml = '';
-    if (action.action_type === 'payroll_run') {
-      const run = runById.get(action.record_id);
-      summary = run ? `Payroll run: ${run.period_label}` : summary;
-      const payslips = payslipsByRunId.get(action.record_id) || [];
-      if (payslips.length) {
+
+    if (actionType === 'payroll_run') {
+      summary = run ? `Payroll run: ${run.periodLabel}` : summary;
+      if (payslips && payslips.length) {
         const totalNet = payslips.reduce((sum, p) => sum + (p.results?.netPay || 0), 0);
         const employeeRows = payslips.map(p =>
-          `<li>${p.employee_snapshot.first_name} ${p.employee_snapshot.last_name} — ${money(p.results?.netPay || 0)}</li>`
+          `<li>${p.employeeSnapshot.first_name} ${p.employeeSnapshot.last_name} — ${money(p.results?.netPay || 0)}</li>`
         ).join('');
         breakdownHtml = `
           <p class="hint">${payslips.length} employee(s) &middot; Total net pay: ${money(totalNet)}</p>
@@ -423,14 +432,9 @@ async function buildApprovalItemsHtml(rows) {
           </details>
         `;
       }
-    } else {
-      const app = appById.get(action.record_id);
-      if (app) {
-        const emp = employeeById.get(app.employee_id);
-        const type = typeById.get(app.leave_type_id);
-        summary = `Leave: ${emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'} — ${type ? type.name : 'Leave'}, ${app.start_date} to ${app.end_date} (${Number(app.days_requested).toFixed(2)} day(s))`;
-        overallStatus = app.status;
-      }
+    } else if (application) {
+      summary = `Leave: ${employee ? `${employee.firstName} ${employee.lastName}` : 'Unknown'} — ${leaveType ? leaveType.name : 'Leave'}, ${application.startDate} to ${application.endDate} (${Number(application.daysRequested).toFixed(2)} day(s))`;
+      overallStatus = application.status;
     }
 
     if (action.decision === 'pending') {
@@ -447,8 +451,8 @@ async function buildApprovalItemsHtml(rows) {
       `;
     }
 
-    const decidedDate = action.decided_at
-      ? new Date(action.decided_at).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })
+    const decidedDate = action.decidedAt
+      ? new Date(action.decidedAt).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })
       : '';
     const decisionPillClass = action.decision === 'approved' ? 'active' : 'terminated';
     const overallLabel = overallStatus ? overallStatus.charAt(0).toUpperCase() + overallStatus.slice(1) : '';
@@ -470,11 +474,10 @@ async function renderApprovalsTab() {
   approvalsError.hidden = true;
   approvalsRefreshBtn.disabled = true;
   try {
-    const { data: actions, error } = await supabase.from('approval_actions').select('*').eq('decision', 'pending').eq('action_type', 'payroll_run').order('created_at', { ascending: true });
-    if (error) throw error;
-    const rows = actions || [];
+    const { items } = await callFunction('/api/get-approval-items', { actionType: 'payroll_run', pendingOnly: true });
+    const rows = items || [];
     approvalsEmpty.hidden = rows.length > 0;
-    approvalsList.innerHTML = await buildApprovalItemsHtml(rows);
+    approvalsList.innerHTML = buildApprovalItemsHtml(rows, 'payroll_run');
     await refreshApprovalBadges();
   } catch (err) {
     approvalsError.textContent = err.message || 'Could not load approvals.';
@@ -491,16 +494,15 @@ async function renderLeaveApprovalsTab() {
   leaveApprovalsError.hidden = true;
   leaveApprovalsRefreshBtn.disabled = true;
   try {
-    const { data: actions, error } = await supabase.from('approval_actions').select('*').eq('action_type', 'leave_application').order('created_at', { ascending: true });
-    if (error) throw error;
-    const rows = (actions || []).sort((a, b) => {
-      if (a.decision === 'pending' && b.decision !== 'pending') return -1;
-      if (a.decision !== 'pending' && b.decision === 'pending') return 1;
-      if (a.decision !== 'pending' && b.decision !== 'pending') return new Date(b.decided_at) - new Date(a.decided_at);
+    const { items } = await callFunction('/api/get-approval-items', { actionType: 'leave_application', pendingOnly: false });
+    const rows = (items || []).sort((a, b) => {
+      if (a.action.decision === 'pending' && b.action.decision !== 'pending') return -1;
+      if (a.action.decision !== 'pending' && b.action.decision === 'pending') return 1;
+      if (a.action.decision !== 'pending' && b.action.decision !== 'pending') return new Date(b.action.decidedAt) - new Date(a.action.decidedAt);
       return 0;
     });
     leaveApprovalsEmpty.hidden = rows.length > 0;
-    leaveApprovalsList.innerHTML = await buildApprovalItemsHtml(rows);
+    leaveApprovalsList.innerHTML = buildApprovalItemsHtml(rows, 'leave_application');
     await refreshApprovalBadges();
   } catch (err) {
     leaveApprovalsError.textContent = err.message || 'Could not load approvals.';
@@ -524,12 +526,7 @@ function wireApprovalDecisions(container, errorEl, onDecided) {
     errorEl.hidden = true;
     item.querySelectorAll('button').forEach(b => { b.disabled = true; });
     try {
-      const { error } = await supabase.rpc('record_approval_decision', {
-        p_action_id: btn.dataset.id,
-        p_decision: decision,
-        p_comment: comment
-      });
-      if (error) throw error;
+      await callFunction('/api/record-approval-decision', { actionId: btn.dataset.id, decision, comment });
       await onDecided();
     } catch (err) {
       errorEl.textContent = err.message || 'Could not record your decision.';

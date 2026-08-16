@@ -1,20 +1,43 @@
-import { supabase, callFunction } from './auth.js';
+import { auth, db, callFunction } from './auth.js';
 import { requireReportPasscode } from './reportPasscode.js';
 import { applyPrintWatermark } from './watermark.js';
+import {
+  collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 const { toNumber } = window.PayrollShared;
 
 // Shared with employeePortal.js so an employee's own leave tab reuses the
 // exact same balance formula and data-loading query set instead of
-// re-deriving them -- loadCoreLeaveData's plain select('*') calls come
-// back scoped to just what RLS allows a given session to see, so calling
-// it from an employee session naturally populates these caches with only
-// that employee's own rows, no extra filtering needed on either side.
+// re-deriving them. Unlike Supabase (where a plain select('*') came back
+// pre-scoped by RLS to whatever a given session could see, no client-side
+// branching needed), Firestore rejects a broad collection query outright
+// for an employee session unless every possible result is provably
+// theirs -- so loadCoreLeaveData() branches internally: direct Firestore
+// reads for the owner (unrestricted by firestore.rules' isOwner()), and
+// api/get-leave-data.js (Admin SDK, same broad reads done server-side)
+// for an employee, set via setLeaveViewerIsEmployee() before the portal's
+// first load. Every write in this file (add holiday, save leave type,
+// record a decision, apply on behalf of someone, adjust a balance) only
+// ever runs from this page's own owner-only UI -- employeePortal.js has
+// its own, separate "apply for leave" form -- so businessDoc/
+// businessCollection below stay keyed on the signed-in owner's own uid
+// unconditionally.
 export {
   loadCoreLeaveData, computeLeaveBalanceBreakdown, countWorkingDays, findConflictingLeaveApplication, todayStr,
-  derivedStatus, statusPillClass, statusLabel,
+  derivedStatus, statusPillClass, statusLabel, setLeaveViewerIsEmployee,
   employeesCache, leaveTypesCache, holidaysCache, applicationsCache, adjustmentsCache, settingsCache
 };
+
+let leaveViewerIsEmployee = false;
+function setLeaveViewerIsEmployee(isEmployee) { leaveViewerIsEmployee = isEmployee; }
+
+function businessDoc(...pathSegments) {
+  return doc(db, 'businesses', auth.currentUser.uid, ...pathSegments);
+}
+function businessCollection(...pathSegments) {
+  return collection(db, 'businesses', auth.currentUser.uid, ...pathSegments);
+}
 
 // ---------------------------------------------------------------------
 // Element refs
@@ -229,12 +252,12 @@ const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']; // Date#
 // with a different working week (e.g. Sun-Thu) gets correct results.
 function isWeekend(dateStr) {
   const day = new Date(`${dateStr}T00:00:00`).getDay();
-  const workingDays = settingsCache?.working_days || ['mon', 'tue', 'wed', 'thu', 'fri'];
+  const workingDays = settingsCache?.workingDays || ['mon', 'tue', 'wed', 'thu', 'fri'];
   return !workingDays.includes(WEEKDAY_KEYS[day]);
 }
 
 function isHoliday(dateStr) {
-  return holidaysCache.some(h => h.holiday_date === dateStr);
+  return holidaysCache.some(h => h.holidayDate === dateStr);
 }
 
 function iterateDates(startStr, endStr) {
@@ -263,16 +286,16 @@ function countWorkingDays(startStr, endStr) {
 // on the same day are legitimately both fine.
 function findConflictingLeaveApplication(employeeId, startStr, endStr, { isPartial = false, partialStart = null, partialEnd = null, excludeAppId = null } = {}) {
   return applicationsCache.find(app => {
-    if (app.employee_id !== employeeId) return false;
+    if (app.employeeId !== employeeId) return false;
     if (app.id === excludeAppId) return false;
     if (app.status === 'rejected') return false;
-    if (app.start_date > endStr || app.end_date < startStr) return false;
+    if (app.startDate > endStr || app.endDate < startStr) return false;
 
-    const bothSingleDayPartial = isPartial && app.is_partial_day
-      && startStr === endStr && app.start_date === app.end_date && app.start_date === startStr;
+    const bothSingleDayPartial = isPartial && app.isPartialDay
+      && startStr === endStr && app.startDate === app.endDate && app.startDate === startStr;
     if (bothSingleDayPartial) {
-      if (!partialStart || !partialEnd || !app.partial_start_time || !app.partial_end_time) return true;
-      return partialStart < app.partial_end_time && app.partial_start_time < partialEnd;
+      if (!partialStart || !partialEnd || !app.partialStartTime || !app.partialEndTime) return true;
+      return partialStart < app.partialEndTime && app.partialStartTime < partialEnd;
     }
 
     return true;
@@ -280,7 +303,7 @@ function findConflictingLeaveApplication(employeeId, startStr, endStr, { isParti
 }
 
 function employeeName(employee) {
-  return employee ? `${employee.first_name} ${employee.last_name}` : 'Unknown employee';
+  return employee ? `${employee.firstName} ${employee.lastName}` : 'Unknown employee';
 }
 
 // ---------------------------------------------------------------------
@@ -289,9 +312,9 @@ function employeeName(employee) {
 
 function isEmployeeEligibleForType(employee, leaveType) {
   const elig = leaveType.eligibility || {};
-  const specificIds = elig.specific_employee_ids || [];
-  const hasCriteria = (elig.genders || []).length || (elig.employee_types || []).length
-    || (elig.departments || []).length || (elig.job_positions || []).length;
+  const specificIds = elig.specificEmployeeIds || [];
+  const hasCriteria = (elig.genders || []).length || (elig.employeeTypes || []).length
+    || (elig.departments || []).length || (elig.jobPositions || []).length;
 
   if (!hasCriteria) {
     // No gender/type/department/position filter set: a non-empty
@@ -302,16 +325,16 @@ function isEmployeeEligibleForType(employee, leaveType) {
 
   if (specificIds.includes(employee.id)) return true;
   if ((elig.genders || []).length && !elig.genders.includes(employee.gender)) return false;
-  if ((elig.employee_types || []).length && !elig.employee_types.includes(employee.employee_type)) return false;
+  if ((elig.employeeTypes || []).length && !elig.employeeTypes.includes(employee.employeeType)) return false;
   if ((elig.departments || []).length && !elig.departments.includes(employee.department)) return false;
-  if ((elig.job_positions || []).length && !elig.job_positions.includes(employee.job_position)) return false;
+  if ((elig.jobPositions || []).length && !elig.jobPositions.includes(employee.jobPosition)) return false;
   return true;
 }
 
 function getEligibleLeaveTypesForEmployee(employee, forDateStr) {
   return leaveTypesCache.filter(lt => {
-    if (!lt.is_active) return false;
-    if (lt.effective_start_date && forDateStr && forDateStr < lt.effective_start_date) return false;
+    if (!lt.isActive) return false;
+    if (lt.effectiveStartDate && forDateStr && forDateStr < lt.effectiveStartDate) return false;
     return isEmployeeEligibleForType(employee, lt);
   });
 }
@@ -336,13 +359,13 @@ function monthsCreditedInYear(referenceStr, asOfStr) {
 }
 
 function entitlementForYear(employee, leaveType, yearStart, yearEnd, asOfStr) {
-  const referenceStart = [yearStart, employee.contract_start_date, leaveType.effective_start_date]
+  const referenceStart = [yearStart, employee.contractStartDate, leaveType.effectiveStartDate]
     .filter(Boolean)
     .reduce((max, d) => (d > max ? d : max), yearStart);
   if (asOfStr < referenceStart) return 0;
 
-  const annual = toNumber(leaveType.annual_days);
-  if (leaveType.accrual_method === 'monthly') {
+  const annual = toNumber(leaveType.annualDays);
+  if (leaveType.accrualMethod === 'monthly') {
     const cappedAsOf = asOfStr < yearEnd ? asOfStr : yearEnd;
     const months = monthsCreditedInYear(referenceStart, cappedAsOf);
     return Math.min(annual, (annual / 12) * months);
@@ -357,9 +380,9 @@ function entitlementForYear(employee, leaveType, yearStart, yearEnd, asOfStr) {
 // started yet.
 function usedDaysForYear(employeeId, leaveTypeId, yearStart, yearEnd) {
   return applicationsCache
-    .filter(a => a.employee_id === employeeId && a.leave_type_id === leaveTypeId && a.status === 'approved'
-      && a.start_date >= yearStart && a.start_date <= yearEnd)
-    .reduce((sum, a) => sum + toNumber(a.days_requested), 0);
+    .filter(a => a.employeeId === employeeId && a.leaveTypeId === leaveTypeId && a.status === 'approved'
+      && a.startDate >= yearStart && a.startDate <= yearEnd)
+    .reduce((sum, a) => sum + toNumber(a.daysRequested), 0);
 }
 
 // Manual +/- corrections (opening balances, ad-hoc HR grants) — scoped
@@ -369,8 +392,8 @@ function usedDaysForYear(employeeId, leaveTypeId, yearStart, yearEnd) {
 function adjustmentDaysForYear(employeeId, leaveTypeId, yearStart, yearEnd, asOfStr) {
   const cappedEnd = asOfStr < yearEnd ? asOfStr : yearEnd;
   return adjustmentsCache
-    .filter(a => a.employee_id === employeeId && a.leave_type_id === leaveTypeId
-      && a.adjustment_date >= yearStart && a.adjustment_date <= cappedEnd)
+    .filter(a => a.employeeId === employeeId && a.leaveTypeId === leaveTypeId
+      && a.adjustmentDate >= yearStart && a.adjustmentDate <= cappedEnd)
     .reduce((sum, a) => sum + toNumber(a.days), 0);
 }
 
@@ -389,7 +412,7 @@ function computeLeaveBalanceBreakdown(employee, leaveType, asOfStr, depth = 0) {
   let carryIn = 0;
   if (depth < 10) {
     const prev = computeLeaveBalanceBreakdown(employee, leaveType, `${year - 1}-12-31`, depth + 1);
-    carryIn = Math.max(0, Math.min(prev.balance, toNumber(leaveType.max_carry_forward)));
+    carryIn = Math.max(0, Math.min(prev.balance, toNumber(leaveType.maxCarryForward)));
   }
   carryIn += adjusted;
   const balance = entitlement + carryIn - used;
@@ -446,27 +469,39 @@ refreshLeaveApplicationsBtn.addEventListener('click', async () => {
 
 async function loadCoreLeaveData({ force = false } = {}) {
   if (leaveDataLoaded && !force) return;
-  const [employeesRes, typesRes, holidaysRes, appsRes, adjustmentsRes, settingsRes] = await Promise.all([
-    supabase.from('employees').select('*').order('first_name'),
-    supabase.from('leave_types').select('*').order('name'),
-    supabase.from('public_holidays').select('*').order('holiday_date'),
-    supabase.from('leave_applications').select('*').order('start_date', { ascending: false }),
-    supabase.from('leave_balance_adjustments').select('*').order('adjustment_date', { ascending: false }),
-    supabase.from('payroll_settings').select('*').maybeSingle()
-  ]);
-  employeesCache = employeesRes.data || [];
-  leaveTypesCache = typesRes.data || [];
-  holidaysCache = holidaysRes.data || [];
-  applicationsCache = appsRes.data || [];
-  adjustmentsCache = adjustmentsRes.data || [];
-  settingsCache = settingsRes.data || null;
+
+  if (leaveViewerIsEmployee) {
+    const data = await callFunction('/api/get-leave-data');
+    employeesCache = data.employees || [];
+    leaveTypesCache = data.leaveTypes || [];
+    holidaysCache = data.holidays || [];
+    applicationsCache = data.applications || [];
+    adjustmentsCache = data.adjustments || [];
+    settingsCache = data.settings || null;
+  } else {
+    const [employeesSnap, typesSnap, holidaysSnap, appsSnap, adjustmentsSnap, settingsSnap] = await Promise.all([
+      getDocs(query(businessCollection('employees'), orderBy('firstName'))),
+      getDocs(query(businessCollection('leaveTypes'), orderBy('name'))),
+      getDocs(query(businessCollection('publicHolidays'), orderBy('holidayDate'))),
+      getDocs(query(businessCollection('leaveApplications'), orderBy('startDate', 'desc'))),
+      getDocs(query(businessCollection('leaveBalanceAdjustments'), orderBy('adjustmentDate', 'desc'))),
+      getDoc(businessDoc('settings', 'main'))
+    ]);
+    employeesCache = employeesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    leaveTypesCache = typesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    holidaysCache = holidaysSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    applicationsCache = appsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    adjustmentsCache = adjustmentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    settingsCache = settingsSnap.exists() ? settingsSnap.data() : null;
+  }
+
   leaveDataLoaded = true;
   populateDeptSelects();
 }
 
 function populateDeptSelects() {
   const departments = settingsCache?.departments || [];
-  const subDepartments = settingsCache?.sub_departments || [];
+  const subDepartments = settingsCache?.subDepartments || [];
   [leaveAnalyticsDept, leaveBalancesDept].forEach(select => {
     const current = select.value;
     select.innerHTML = '<option value="">All departments</option>' + departments.map(d => `<option value="${d}">${d}</option>`).join('');
@@ -485,7 +520,7 @@ function populateDeptSelects() {
 
 function derivedStatus(app) {
   if (app.status === 'pending' || app.status === 'rejected') return app.status;
-  return app.end_date < todayStr() ? 'completed' : 'approved';
+  return app.endDate < todayStr() ? 'completed' : 'approved';
 }
 
 const statusPillClass = { pending: 'terminated', approved: 'active', completed: 'active', rejected: 'terminated' };
@@ -494,32 +529,35 @@ const statusLabel = { pending: 'Pending', approved: 'Approved', completed: 'Comp
 // When an active leave approval workflow exists, the owner's direct
 // Approve/Reject buttons are replaced by an "Awaiting: ..." line --
 // approval power moves entirely to the appointed approvers (see
-// record_approval_decision() in the approval-workflows migration).
-// Populated by loadLeaveApprovalState(), read synchronously by
-// renderApplicationsTable() so that function doesn't need to become async.
+// api/record-approval-decision.js). Populated by loadLeaveApprovalState(),
+// read synchronously by renderApplicationsTable() so that function
+// doesn't need to become async.
 let leaveWorkflowActive = false;
 let leaveApprovalActionsByAppId = new Map();
 
 async function loadLeaveApprovalState() {
-  const { data: workflow } = await supabase.from('approval_workflows').select('id').eq('action_type', 'leave_application').eq('is_active', true).maybeSingle();
-  leaveWorkflowActive = !!workflow;
+  const workflowSnap = await getDoc(businessDoc('approvalWorkflows', 'leave_application'));
+  leaveWorkflowActive = workflowSnap.exists() && !!workflowSnap.data().isActive;
   leaveApprovalActionsByAppId = new Map();
   if (!leaveWorkflowActive) return;
 
   const pendingAppIds = applicationsCache.filter(a => a.status === 'pending').map(a => a.id);
   if (!pendingAppIds.length) return;
 
-  const { data: actions } = await supabase.from('approval_actions').select('*').eq('action_type', 'leave_application').in('record_id', pendingAppIds);
-  if (!actions || !actions.length) return;
+  const actionsSnap = await getDocs(businessCollection('approvalActions'));
+  const actions = actionsSnap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(a => a.actionType === 'leave_application' && pendingAppIds.includes(a.recordId));
+  if (!actions.length) return;
 
-  const employeeIds = [...new Set(actions.map(a => a.employee_id))];
-  const { data: approverEmployees } = await supabase.from('employees').select('id, first_name, last_name').in('id', employeeIds);
-  const nameById = new Map((approverEmployees || []).map(e => [e.id, `${e.first_name} ${e.last_name}`]));
+  const employeeIds = [...new Set(actions.map(a => a.employeeId))];
+  const approverSnaps = await Promise.all(employeeIds.map(id => getDoc(businessDoc('employees', id))));
+  const nameById = new Map(approverSnaps.filter(s => s.exists()).map(s => [s.id, `${s.data().firstName} ${s.data().lastName}`]));
 
   actions.forEach(a => {
-    const list = leaveApprovalActionsByAppId.get(a.record_id) || [];
-    list.push({ ...a, name: nameById.get(a.employee_id) || 'Unknown' });
-    leaveApprovalActionsByAppId.set(a.record_id, list);
+    const list = leaveApprovalActionsByAppId.get(a.recordId) || [];
+    list.push({ ...a, name: nameById.get(a.employeeId) || 'Unknown' });
+    leaveApprovalActionsByAppId.set(a.recordId, list);
   });
 }
 
@@ -535,7 +573,7 @@ function awaitingApprovalHtml(appId) {
 function renderApplicationsTable() {
   const search = leaveApplicationsSearch.value.trim().toLowerCase();
   const rows = applicationsCache
-    .map(app => ({ app, employee: employeesCache.find(e => e.id === app.employee_id), type: leaveTypesCache.find(t => t.id === app.leave_type_id) }))
+    .map(app => ({ app, employee: employeesCache.find(e => e.id === app.employeeId), type: leaveTypesCache.find(t => t.id === app.leaveTypeId) }))
     .filter(({ app }) => currentAppStatusFilter === 'all' || derivedStatus(app) === currentAppStatusFilter)
     .filter(({ employee }) => !search || employeeName(employee).toLowerCase().includes(search));
 
@@ -544,7 +582,7 @@ function renderApplicationsTable() {
 
   leaveApplicationsTableBody.innerHTML = rows.map(({ app, employee, type }) => {
     const status = derivedStatus(app);
-    const comment = app.decision_comment ? ` title="${app.decision_comment.replace(/"/g, '&quot;')}"` : '';
+    const comment = app.decisionComment ? ` title="${app.decisionComment.replace(/"/g, '&quot;')}"` : '';
     const actions = app.status !== 'pending'
       ? ''
       : leaveWorkflowActive
@@ -555,9 +593,9 @@ function renderApplicationsTable() {
       <tr data-id="${app.id}">
         <td>${employeeName(employee)}</td>
         <td>${type ? type.name : 'Deleted leave type'}</td>
-        <td>${app.start_date}</td>
-        <td>${app.end_date}</td>
-        <td>${toNumber(app.days_requested).toFixed(2)}</td>
+        <td>${app.startDate}</td>
+        <td>${app.endDate}</td>
+        <td>${toNumber(app.daysRequested).toFixed(2)}</td>
         <td><span class="status-pill status-${statusPillClass[status]}"${comment}>${statusLabel[status]}</span></td>
         <td>${actions}</td>
       </tr>
@@ -603,13 +641,12 @@ leaveDecisionForm.addEventListener('submit', async event => {
   const confirmBtn = document.getElementById('leaveDecisionConfirmBtn');
   confirmBtn.disabled = true;
   try {
-    const { error } = await supabase.from('leave_applications').update({
+    await updateDoc(businessDoc('leaveApplications', pendingDecision.applicationId), {
       status: pendingDecision.action,
-      decision_comment: comment,
-      decided_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }).eq('id', pendingDecision.applicationId);
-    if (error) throw error;
+      decisionComment: comment,
+      decidedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
 
     await loadCoreLeaveData({ force: true });
     renderApplicationsTable();
@@ -639,14 +676,14 @@ function renderAnalytics() {
 
   const rows = applicationsCache
     .filter(a => a.status === 'approved')
-    .map(a => ({ app: a, employee: employeesCache.find(e => e.id === a.employee_id), type: leaveTypesCache.find(t => t.id === a.leave_type_id) }))
+    .map(a => ({ app: a, employee: employeesCache.find(e => e.id === a.employeeId), type: leaveTypesCache.find(t => t.id === a.leaveTypeId) }))
     .filter(({ employee }) => employee)
     .filter(({ employee }) => !dept || employee.department === dept)
-    .filter(({ employee }) => !subDept || employee.sub_department === subDept)
-    .filter(({ app }) => !from || app.start_date >= from)
-    .filter(({ app }) => !to || app.start_date <= to);
+    .filter(({ employee }) => !subDept || employee.subDepartment === subDept)
+    .filter(({ app }) => !from || app.startDate >= from)
+    .filter(({ app }) => !to || app.startDate <= to);
 
-  const totalDays = rows.reduce((sum, r) => sum + toNumber(r.app.days_requested), 0);
+  const totalDays = rows.reduce((sum, r) => sum + toNumber(r.app.daysRequested), 0);
 
   leaveAnalyticsSummary.innerHTML = `
     <div><span>Applications</span><strong>${rows.length}</strong></div>
@@ -657,9 +694,9 @@ function renderAnalytics() {
   const byDept = new Map();
   rows.forEach(({ app, employee, type }) => {
     const typeName = type ? type.name : 'Unknown';
-    byType.set(typeName, (byType.get(typeName) || 0) + toNumber(app.days_requested));
+    byType.set(typeName, (byType.get(typeName) || 0) + toNumber(app.daysRequested));
     const deptName = employee.department || 'Unassigned';
-    byDept.set(deptName, (byDept.get(deptName) || 0) + toNumber(app.days_requested));
+    byDept.set(deptName, (byDept.get(deptName) || 0) + toNumber(app.daysRequested));
   });
 
   const listHtml = (map, label) => `
@@ -808,9 +845,9 @@ leaveApplyHoursTo.addEventListener('change', updateLeaveApplyPreview);
 
 leaveApplyType.addEventListener('change', () => {
   const type = leaveTypesCache.find(t => t.id === leaveApplyType.value);
-  leaveApplyPartialRow.hidden = !type?.allow_partial_day;
-  leaveApplyDocRow.hidden = !type?.requires_documentation;
-  if (!type?.allow_partial_day) leaveApplyIsPartial.checked = false;
+  leaveApplyPartialRow.hidden = !type?.allowPartialDay;
+  leaveApplyDocRow.hidden = !type?.requiresDocumentation;
+  if (!type?.allowPartialDay) leaveApplyIsPartial.checked = false;
   syncPartialDayUi();
   updateLeaveApplyPreview();
 });
@@ -826,7 +863,7 @@ function updateLeaveApplyPreview() {
   const balanceBefore = computeLeaveBalance(employee, type, leaveApplyStart.value);
   const balanceAfter = balanceBefore - days;
   leaveApplyBalanceHint.textContent =
-    `This request is ${days} day(s). Current balance: ${balanceBefore.toFixed(2)} day(s). Balance after: ${balanceAfter.toFixed(2)} day(s)${type.allow_negative_balance ? '' : (balanceAfter < 0 ? ' — exceeds available balance' : '')}.`;
+    `This request is ${days} day(s). Current balance: ${balanceBefore.toFixed(2)} day(s). Balance after: ${balanceAfter.toFixed(2)} day(s)${type.allowNegativeBalance ? '' : (balanceAfter < 0 ? ' — exceeds available balance' : '')}.`;
 }
 
 function partialHoursRequested() {
@@ -838,9 +875,9 @@ function partialHoursRequested() {
 }
 
 function computeRequestedDays(type) {
-  if (leaveApplyIsPartial.checked && type?.allow_partial_day) {
+  if (leaveApplyIsPartial.checked && type?.allowPartialDay) {
     const hours = partialHoursRequested();
-    const hoursPerDay = toNumber(settingsCache?.work_hours_per_day) || 8;
+    const hoursPerDay = toNumber(settingsCache?.workHoursPerDay) || 8;
     return hoursPerDay > 0 ? Math.round((hours / hoursPerDay) * 100) / 100 : 0;
   }
   return countWorkingDays(leaveApplyStart.value, leaveApplyEnd.value);
@@ -852,7 +889,7 @@ leaveApplyView.addEventListener('submit', async event => {
 
   const employee = employeesCache.find(e => e.id === leaveApplyEmployee.value);
   const type = leaveTypesCache.find(t => t.id === leaveApplyType.value);
-  const isPartial = leaveApplyIsPartial.checked && type?.allow_partial_day;
+  const isPartial = leaveApplyIsPartial.checked && type?.allowPartialDay;
 
   if (isPartial) leaveApplyEnd.value = leaveApplyStart.value;
 
@@ -882,8 +919,8 @@ leaveApplyView.addEventListener('submit', async event => {
     partialEnd: isPartial ? leaveApplyHoursTo.value : null
   });
   if (conflict) {
-    const conflictType = leaveTypesCache.find(t => t.id === conflict.leave_type_id);
-    leaveApplyError.textContent = `${employeeName(employee)} already has a ${conflict.status} ${conflictType ? conflictType.name : 'leave'} request covering ${conflict.start_date}${conflict.end_date !== conflict.start_date ? ` to ${conflict.end_date}` : ''}.`;
+    const conflictType = leaveTypesCache.find(t => t.id === conflict.leaveTypeId);
+    leaveApplyError.textContent = `${employeeName(employee)} already has a ${conflict.status} ${conflictType ? conflictType.name : 'leave'} request covering ${conflict.startDate}${conflict.endDate !== conflict.startDate ? ` to ${conflict.endDate}` : ''}.`;
     leaveApplyError.hidden = false;
     return;
   }
@@ -893,12 +930,12 @@ leaveApplyView.addEventListener('submit', async event => {
     return;
   }
   const noticeDays = Math.ceil((new Date(`${leaveApplyStart.value}T00:00:00`) - new Date(`${todayStr()}T00:00:00`)) / 86400000);
-  if (noticeDays < toNumber(type.notice_period_days)) {
-    leaveApplyError.textContent = `${type.name} requires at least ${type.notice_period_days} day(s) of notice.`;
+  if (noticeDays < toNumber(type.noticePeriodDays)) {
+    leaveApplyError.textContent = `${type.name} requires at least ${type.noticePeriodDays} day(s) of notice.`;
     leaveApplyError.hidden = false;
     return;
   }
-  if (type.requires_documentation && !leaveApplyDoc.value.trim()) {
+  if (type.requiresDocumentation && !leaveApplyDoc.value.trim()) {
     leaveApplyError.textContent = `${type.name} requires supporting documentation details.`;
     leaveApplyError.hidden = false;
     return;
@@ -910,7 +947,7 @@ leaveApplyView.addEventListener('submit', async event => {
     leaveApplyError.hidden = false;
     return;
   }
-  if (!type.allow_negative_balance) {
+  if (!type.allowNegativeBalance) {
     const balanceAfter = computeLeaveBalance(employee, type, leaveApplyStart.value) - days;
     if (balanceAfter < 0) {
       leaveApplyError.textContent = `This request would leave a negative balance, which ${type.name} does not allow.`;
@@ -921,23 +958,19 @@ leaveApplyView.addEventListener('submit', async event => {
 
   leaveApplySaveBtn.disabled = true;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('leave_applications').insert({
-      user_id: user.id,
-      employee_id: employee.id,
-      leave_type_id: type.id,
-      start_date: leaveApplyStart.value,
-      end_date: leaveApplyEnd.value,
-      is_partial_day: isPartial,
-      partial_hours: isPartial ? partialHoursRequested() : null,
-      partial_start_time: isPartial ? leaveApplyHoursFrom.value : null,
-      partial_end_time: isPartial ? leaveApplyHoursTo.value : null,
-      days_requested: days,
+    await callFunction('/api/create-leave-application', {
+      employeeId: employee.id,
+      leaveTypeId: type.id,
+      startDate: leaveApplyStart.value,
+      endDate: leaveApplyEnd.value,
+      isPartialDay: isPartial,
+      partialHours: isPartial ? partialHoursRequested() : null,
+      partialStartTime: isPartial ? leaveApplyHoursFrom.value : null,
+      partialEndTime: isPartial ? leaveApplyHoursTo.value : null,
+      daysRequested: days,
       reason: leaveApplyReason.value.trim() || null,
-      documentation_note: leaveApplyDoc.value.trim() || null,
-      status: 'pending'
+      documentationNote: leaveApplyDoc.value.trim() || null
     });
-    if (error) throw error;
 
     await loadCoreLeaveData({ force: true });
     showLeaveTab('applications');
@@ -958,9 +991,9 @@ function renderLeaveTypesTable() {
   leaveTypesTableBody.innerHTML = leaveTypesCache.map(t => `
     <tr data-id="${t.id}">
       <td>${t.name}</td>
-      <td>${toNumber(t.annual_days).toFixed(2)}</td>
-      <td>${t.accrual_method === 'monthly' ? 'Monthly accrual' : 'Immediate'}</td>
-      <td><span class="status-pill status-${t.is_active ? 'active' : 'terminated'}">${t.is_active ? 'Active' : 'Inactive'}</span></td>
+      <td>${toNumber(t.annualDays).toFixed(2)}</td>
+      <td>${t.accrualMethod === 'monthly' ? 'Monthly accrual' : 'Immediate'}</td>
+      <td><span class="status-pill status-${t.isActive ? 'active' : 'terminated'}">${t.isActive ? 'Active' : 'Inactive'}</span></td>
       <td><button type="button" class="ghost-button leave-type-edit-btn" data-id="${t.id}">Edit</button></td>
     </tr>
   `).join('');
@@ -995,9 +1028,9 @@ function filterEligibilityEmployeeChecklist(query) {
 
 function employeeMatchesCriteria(employee, genders, employeeTypes, departments, jobPositions) {
   if (genders.length && !genders.includes(employee.gender)) return false;
-  if (employeeTypes.length && !employeeTypes.includes(employee.employee_type)) return false;
+  if (employeeTypes.length && !employeeTypes.includes(employee.employeeType)) return false;
   if (departments.length && !departments.includes(employee.department)) return false;
-  if (jobPositions.length && !jobPositions.includes(employee.job_position)) return false;
+  if (jobPositions.length && !jobPositions.includes(employee.jobPosition)) return false;
   return true;
 }
 
@@ -1033,15 +1066,15 @@ leaveTypeEligEmployeeClearBtn.addEventListener('click', () => {
 
 function populateLeaveTypeEligibilityLists(eligibility = {}) {
   const departments = settingsCache?.departments || [];
-  const jobPositions = settingsCache?.job_positions || [];
+  const jobPositions = settingsCache?.jobPositions || [];
 
   leaveTypeEligDepartment.innerHTML = checklistHtml(departments, eligibility.departments || [], 'eligDept');
-  leaveTypeEligJobPosition.innerHTML = checklistHtml(jobPositions, eligibility.job_positions || [], 'eligJob');
+  leaveTypeEligJobPosition.innerHTML = checklistHtml(jobPositions, eligibility.jobPositions || [], 'eligJob');
   [...leaveTypeEligGender.querySelectorAll('input')].forEach(cb => { cb.checked = (eligibility.genders || []).includes(cb.value); });
-  [...leaveTypeEligEmployeeType.querySelectorAll('input')].forEach(cb => { cb.checked = (eligibility.employee_types || []).includes(cb.value); });
+  [...leaveTypeEligEmployeeType.querySelectorAll('input')].forEach(cb => { cb.checked = (eligibility.employeeTypes || []).includes(cb.value); });
 
   leaveTypeEligEmployeeSearch.value = '';
-  renderEligibilityEmployeeChecklist(eligibility.specific_employee_ids || []);
+  renderEligibilityEmployeeChecklist(eligibility.specificEmployeeIds || []);
 }
 
 function resetLeaveTypeForm() {
@@ -1058,15 +1091,15 @@ function populateLeaveTypeForm(leaveType) {
   leaveTypeFormTitle.textContent = leaveType.name;
   leaveTypeFormError.hidden = true;
   leaveTypeName.value = leaveType.name || '';
-  leaveTypeAnnualDays.value = leaveType.annual_days ?? 0;
-  leaveTypeAccrualMethod.value = leaveType.accrual_method || 'immediate';
-  leaveTypeEffectiveDate.value = leaveType.effective_start_date || '';
-  leaveTypeNoticeDays.value = leaveType.notice_period_days ?? 0;
-  leaveTypeMaxCarryForward.value = leaveType.max_carry_forward ?? 0;
-  leaveTypeAllowNegative.checked = !!leaveType.allow_negative_balance;
-  leaveTypeAllowPartial.checked = !!leaveType.allow_partial_day;
-  leaveTypeRequiresDoc.checked = !!leaveType.requires_documentation;
-  leaveTypeIsActive.checked = !!leaveType.is_active;
+  leaveTypeAnnualDays.value = leaveType.annualDays ?? 0;
+  leaveTypeAccrualMethod.value = leaveType.accrualMethod || 'immediate';
+  leaveTypeEffectiveDate.value = leaveType.effectiveStartDate || '';
+  leaveTypeNoticeDays.value = leaveType.noticePeriodDays ?? 0;
+  leaveTypeMaxCarryForward.value = leaveType.maxCarryForward ?? 0;
+  leaveTypeAllowNegative.checked = !!leaveType.allowNegativeBalance;
+  leaveTypeAllowPartial.checked = !!leaveType.allowPartialDay;
+  leaveTypeRequiresDoc.checked = !!leaveType.requiresDocumentation;
+  leaveTypeIsActive.checked = !!leaveType.isActive;
   populateLeaveTypeEligibilityLists(leaveType.eligibility || {});
 }
 
@@ -1109,35 +1142,32 @@ leaveTypeForm.addEventListener('submit', async event => {
 
   const payload = {
     name,
-    annual_days: toNumber(leaveTypeAnnualDays.value),
-    accrual_method: leaveTypeAccrualMethod.value,
-    effective_start_date: leaveTypeEffectiveDate.value || null,
-    notice_period_days: Math.round(toNumber(leaveTypeNoticeDays.value)),
-    max_carry_forward: toNumber(leaveTypeMaxCarryForward.value),
-    allow_negative_balance: leaveTypeAllowNegative.checked,
-    allow_partial_day: leaveTypeAllowPartial.checked,
-    requires_documentation: leaveTypeRequiresDoc.checked,
-    is_active: leaveTypeIsActive.checked,
+    annualDays: toNumber(leaveTypeAnnualDays.value),
+    accrualMethod: leaveTypeAccrualMethod.value,
+    effectiveStartDate: leaveTypeEffectiveDate.value || null,
+    noticePeriodDays: Math.round(toNumber(leaveTypeNoticeDays.value)),
+    maxCarryForward: toNumber(leaveTypeMaxCarryForward.value),
+    allowNegativeBalance: leaveTypeAllowNegative.checked,
+    allowPartialDay: leaveTypeAllowPartial.checked,
+    requiresDocumentation: leaveTypeRequiresDoc.checked,
+    isActive: leaveTypeIsActive.checked,
     eligibility: {
       genders: checkedValues(leaveTypeEligGender),
-      employee_types: checkedValues(leaveTypeEligEmployeeType),
+      employeeTypes: checkedValues(leaveTypeEligEmployeeType),
       departments: checkedValues(leaveTypeEligDepartment),
-      job_positions: checkedValues(leaveTypeEligJobPosition),
-      specific_employee_ids: checkedValues(leaveTypeEligEmployee)
+      jobPositions: checkedValues(leaveTypeEligJobPosition),
+      specificEmployeeIds: checkedValues(leaveTypeEligEmployee)
     },
-    updated_at: new Date().toISOString()
+    updatedAt: new Date().toISOString()
   };
 
   const saveBtn = document.getElementById('leaveTypeSaveBtn');
   saveBtn.disabled = true;
   try {
     if (editingLeaveTypeId) {
-      const { error } = await supabase.from('leave_types').update(payload).eq('id', editingLeaveTypeId);
-      if (error) throw error;
+      await updateDoc(businessDoc('leaveTypes', editingLeaveTypeId), payload);
     } else {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from('leave_types').insert({ ...payload, user_id: user.id });
-      if (error) throw error;
+      await addDoc(businessCollection('leaveTypes'), { ...payload, createdAt: new Date().toISOString() });
     }
     await loadCoreLeaveData({ force: true });
     showLeaveTab('types');
@@ -1157,10 +1187,10 @@ function renderHolidaysTable() {
   leaveHolidaySeedYear.value = leaveHolidaySeedYear.value || String(new Date().getFullYear());
   leaveHolidaysEmptyState.hidden = holidaysCache.length > 0;
   leaveHolidaysTableBody.innerHTML = [...holidaysCache]
-    .sort((a, b) => (a.holiday_date < b.holiday_date ? -1 : 1))
+    .sort((a, b) => (a.holidayDate < b.holidayDate ? -1 : 1))
     .map(h => `
       <tr data-id="${h.id}">
-        <td>${h.holiday_date}</td>
+        <td>${h.holidayDate}</td>
         <td>${h.name}</td>
         <td><button type="button" class="ghost-button leave-holiday-delete-btn" data-id="${h.id}">Delete</button></td>
       </tr>
@@ -1174,19 +1204,24 @@ addHolidayBtn.addEventListener('click', async () => {
     leaveHolidaysError.hidden = false;
     return;
   }
+  if (holidaysCache.some(h => h.holidayDate === leaveHolidayDate.value)) {
+    leaveHolidaysError.textContent = 'A holiday on this date already exists.';
+    leaveHolidaysError.hidden = false;
+    return;
+  }
   addHolidayBtn.disabled = true;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('public_holidays').insert({
-      user_id: user.id, holiday_date: leaveHolidayDate.value, name: leaveHolidayName.value.trim()
+    await addDoc(businessCollection('publicHolidays'), {
+      holidayDate: leaveHolidayDate.value,
+      name: leaveHolidayName.value.trim(),
+      createdAt: new Date().toISOString()
     });
-    if (error) throw error;
     leaveHolidayDate.value = '';
     leaveHolidayName.value = '';
     await loadCoreLeaveData({ force: true });
     renderHolidaysTable();
   } catch (err) {
-    leaveHolidaysError.textContent = err.message || 'Could not add this holiday (it may already exist).';
+    leaveHolidaysError.textContent = err.message || 'Could not add this holiday.';
     leaveHolidaysError.hidden = false;
   } finally {
     addHolidayBtn.disabled = false;
@@ -1199,10 +1234,9 @@ leaveHolidaysTableBody.addEventListener('click', event => {
   const holiday = holidaysCache.find(h => h.id === btn.dataset.id);
   openLeaveConfirm({
     title: 'Delete public holiday?',
-    message: holiday ? `"${holiday.name}" (${holiday.holiday_date}) will be removed and no longer excluded from leave-day counts.` : 'This holiday will be removed and no longer excluded from leave-day counts.',
+    message: holiday ? `"${holiday.name}" (${holiday.holidayDate}) will be removed and no longer excluded from leave-day counts.` : 'This holiday will be removed and no longer excluded from leave-day counts.',
     onConfirm: async () => {
-      const { error } = await supabase.from('public_holidays').delete().eq('id', btn.dataset.id);
-      if (error) throw error;
+      await deleteDoc(businessDoc('publicHolidays', btn.dataset.id));
       await loadCoreLeaveData({ force: true });
       renderHolidaysTable();
     }
@@ -1261,7 +1295,7 @@ function commonKenyanHolidays(year) {
 seedHolidaysBtn.addEventListener('click', async () => {
   leaveHolidaysError.hidden = true;
   const year = Math.round(toNumber(leaveHolidaySeedYear.value)) || new Date().getFullYear();
-  const candidates = commonKenyanHolidays(year).filter(h => !holidaysCache.some(existing => existing.holiday_date === h.date));
+  const candidates = commonKenyanHolidays(year).filter(h => !holidaysCache.some(existing => existing.holidayDate === h.date));
   if (!candidates.length) {
     leaveHolidaysError.textContent = 'All common holidays for this year are already on the list.';
     leaveHolidaysError.hidden = false;
@@ -1269,11 +1303,9 @@ seedHolidaysBtn.addEventListener('click', async () => {
   }
   seedHolidaysBtn.disabled = true;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('public_holidays').insert(
-      candidates.map(h => ({ user_id: user.id, holiday_date: h.date, name: h.name }))
-    );
-    if (error) throw error;
+    await Promise.all(candidates.map(h => addDoc(businessCollection('publicHolidays'), {
+      holidayDate: h.date, name: h.name, createdAt: new Date().toISOString()
+    })));
     await loadCoreLeaveData({ force: true });
     renderHolidaysTable();
   } catch (err) {
@@ -1293,8 +1325,8 @@ const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function employeesOnLeave(dateStr) {
   return applicationsCache
-    .filter(a => a.status === 'approved' && a.start_date <= dateStr && a.end_date >= dateStr)
-    .map(a => employeesCache.find(e => e.id === a.employee_id))
+    .filter(a => a.status === 'approved' && a.startDate <= dateStr && a.endDate >= dateStr)
+    .map(a => employeesCache.find(e => e.id === a.employeeId))
     .filter(Boolean);
 }
 
@@ -1310,7 +1342,7 @@ function renderCalendar() {
 
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const holiday = holidaysCache.find(h => h.holiday_date === dateStr);
+    const holiday = holidaysCache.find(h => h.holidayDate === dateStr);
     const weekend = isWeekend(dateStr);
     const onLeave = employeesOnLeave(dateStr);
     const names = onLeave.slice(0, 2).map(employeeName).join(', ');
@@ -1357,7 +1389,7 @@ function filteredBalanceEmployees() {
   return employeesCache
     .filter(e => e.status === 'active')
     .filter(e => !dept || e.department === dept)
-    .filter(e => !subDept || e.sub_department === subDept)
+    .filter(e => !subDept || e.subDepartment === subDept)
     .filter(e => !search || employeeName(e).toLowerCase().includes(search));
 }
 
@@ -1382,11 +1414,11 @@ function renderBalancesTable() {
   leaveBalancesTableBody.innerHTML = employees.map(emp => `
     <tr>
       <td>${employeeName(emp)}</td>
-      <td>${emp.job_position || '—'}</td>
+      <td>${emp.jobPosition || '—'}</td>
       <td>${emp.department || '—'}</td>
       ${leaveTypesCache.map(t => {
         const b = computeLeaveBalanceBreakdown(emp, t, asOf);
-        const hasAdjustments = adjustmentsCache.some(a => a.employee_id === emp.id && a.leave_type_id === t.id);
+        const hasAdjustments = adjustmentsCache.some(a => a.employeeId === emp.id && a.leaveTypeId === t.id);
         return `
           <td class="leave-num-cell leave-balance-subcell">${b.entitlement.toFixed(2)}</td>
           <td class="leave-num-cell leave-balance-subcell">${b.carryIn.toFixed(2)}</td>
@@ -1430,13 +1462,13 @@ leaveBalancesTableBody.addEventListener('click', event => {
 function buildLeaveBalancesPrintHtml() {
   const asOf = leaveBalancesAsOf.value || todayStr();
   const employees = filteredBalanceEmployees();
-  const businessName = settingsCache?.business_name || 'Business name not set';
-  const logoUrl = settingsCache?.business_logo_url || '';
+  const businessName = settingsCache?.businessName || 'Business name not set';
+  const logoUrl = settingsCache?.businessLogoUrl || '';
   const deptLabel = leaveBalancesDept.value || 'All departments';
   const subDeptLabel = leaveBalancesSubDept.value || 'All sub departments';
 
   const rows = employees.map(emp => ({
-    leading: [employeeName(emp), emp.job_position || '—', emp.department || '—'],
+    leading: [employeeName(emp), emp.jobPosition || '—', emp.department || '—'],
     breakdowns: leaveTypesCache.map(t => computeLeaveBalanceBreakdown(emp, t, asOf))
   }));
 
@@ -1547,15 +1579,15 @@ emailLeaveBalancesBtn.addEventListener('click', async () => {
 function renderAdjustmentHistory() {
   const { employeeId, leaveTypeId } = currentAdjustmentTarget;
   const rows = adjustmentsCache
-    .filter(a => a.employee_id === employeeId && a.leave_type_id === leaveTypeId)
-    .sort((a, b) => (a.adjustment_date < b.adjustment_date ? 1 : -1));
+    .filter(a => a.employeeId === employeeId && a.leaveTypeId === leaveTypeId)
+    .sort((a, b) => (a.adjustmentDate < b.adjustmentDate ? 1 : -1));
 
   leaveAdjustHistory.innerHTML = rows.length
     ? rows.map(a => `
         <div class="leave-adjust-history-row">
           <div>
             <strong>${a.days > 0 ? '+' : ''}${a.days} day${Math.abs(a.days) === 1 ? '' : 's'}</strong>
-            <span>${a.adjustment_date}${a.reason ? ` &middot; ${a.reason}` : ''}</span>
+            <span>${a.adjustmentDate}${a.reason ? ` &middot; ${a.reason}` : ''}</span>
           </div>
           <button type="button" class="ghost-button leave-adjust-delete-btn" data-id="${a.id}">Delete</button>
         </div>
@@ -1600,16 +1632,14 @@ leaveAdjustForm.addEventListener('submit', async event => {
 
   leaveAdjustSaveBtn.disabled = true;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('leave_balance_adjustments').insert({
-      user_id: user.id,
-      employee_id: currentAdjustmentTarget.employeeId,
-      leave_type_id: currentAdjustmentTarget.leaveTypeId,
-      adjustment_date: leaveAdjustDate.value,
+    await addDoc(businessCollection('leaveBalanceAdjustments'), {
+      employeeId: currentAdjustmentTarget.employeeId,
+      leaveTypeId: currentAdjustmentTarget.leaveTypeId,
+      adjustmentDate: leaveAdjustDate.value,
       days,
-      reason: leaveAdjustReason.value.trim() || null
+      reason: leaveAdjustReason.value.trim() || null,
+      createdAt: new Date().toISOString()
     });
-    if (error) throw error;
 
     await loadCoreLeaveData({ force: true });
     renderBalancesTable();
@@ -1629,13 +1659,12 @@ leaveAdjustHistory.addEventListener('click', event => {
   if (!btn || !currentAdjustmentTarget) return;
   const { employeeId, leaveTypeId } = currentAdjustmentTarget;
   const adjustment = adjustmentsCache.find(a => a.id === btn.dataset.id);
-  const amount = adjustment ? `${adjustment.days > 0 ? '+' : ''}${adjustment.days} day${Math.abs(adjustment.days) === 1 ? '' : 's'} (${adjustment.adjustment_date})` : 'This adjustment';
+  const amount = adjustment ? `${adjustment.days > 0 ? '+' : ''}${adjustment.days} day${Math.abs(adjustment.days) === 1 ? '' : 's'} (${adjustment.adjustmentDate})` : 'This adjustment';
   openLeaveConfirm({
     title: 'Delete this adjustment?',
     message: `${amount} will be permanently removed and the balance recalculated.`,
     onConfirm: async () => {
-      const { error } = await supabase.from('leave_balance_adjustments').delete().eq('id', btn.dataset.id);
-      if (error) throw error;
+      await deleteDoc(businessDoc('leaveBalanceAdjustments', btn.dataset.id));
       await loadCoreLeaveData({ force: true });
       renderBalancesTable();
       openAdjustmentModal(employeeId, leaveTypeId);

@@ -1,5 +1,13 @@
-import { supabase, callFunction, getGeolocation } from './auth.js';
+import { auth, db, callFunction, getGeolocation } from './auth.js';
 import { hashReportPasscode, invalidateReportPasscodeCache } from './reportPasscode.js';
+import {
+  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, getCountFromServer
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import {
+  getStorage, ref, uploadBytes, getDownloadURL
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+
+const storage = getStorage();
 
 const { earningComponents, irregularComponentIds, classificationLabels, toNumber, money, rawMoney } = window.PayrollShared;
 
@@ -104,8 +112,8 @@ const settingsLogoFetchBtn = document.getElementById('settingsLogoFetchBtn');
 const settingsLogoRemoveBtn = document.getElementById('settingsLogoRemoveBtn');
 const settingsLogoError = document.getElementById('settingsLogoError');
 
-const LOOKUP_LIST_ELS = { job_positions: 'jobPositionsList', departments: 'departmentsList', sub_departments: 'subDepartmentsList' };
-const LOOKUP_INPUT_ELS = { job_positions: 'jobPositionInput', departments: 'departmentInput', sub_departments: 'subDepartmentInput' };
+const LOOKUP_LIST_ELS = { jobPositions: 'jobPositionsList', departments: 'departmentsList', subDepartments: 'subDepartmentsList' };
+const LOOKUP_INPUT_ELS = { jobPositions: 'jobPositionInput', departments: 'departmentInput', subDepartments: 'subDepartmentInput' };
 
 let currentStatusFilter = 'active';
 let currentEmployeeId = null;
@@ -115,31 +123,38 @@ let cachedSettings = null;
 let settingsLoadPromise = null;
 let pendingLogoUrl = null; // staged like every other settings field -- only saved on "Save settings"
 
+function businessDoc(...pathSegments) {
+  return doc(db, 'businesses', auth.currentUser.uid, ...pathSegments);
+}
+function businessCollection(...pathSegments) {
+  return collection(db, 'businesses', auth.currentUser.uid, ...pathSegments);
+}
+
 function defaultSettings() {
   return {
-    nssf_rate: 6, nssf_upper_limit: 108000, shif_rate: 2.75, shif_minimum: 300,
-    ahl_employee_rate: 1.5, ahl_employer_rate: 1.5, personal_relief: 2400, nita_levy: 50,
-    insurance_relief_cap: 5000, telephone_threshold: 5000, meals_threshold: 5000,
-    allowable_deduction_cap: 30000, per_diem_threshold: 10000, days_in_month: 30,
-    secondary_flat_rate: 35, contractor_wht_rate: 5, pwd_exemption: 150000,
-    job_positions: [], departments: [], sub_departments: [],
-    employee_number_prefix: 'EMP', employee_number_padding: 3, employee_number_separator: '',
-    employee_number_include_year: false, employee_number_include_month: false,
-    employee_number_next: 1,
-    business_name: '',
-    business_logo_url: '',
-    working_days: ['mon', 'tue', 'wed', 'thu', 'fri'],
-    work_start_time: '08:00',
-    work_hours_per_day: 8,
-    break_minutes: 60
+    nssfRate: 6, nssfUpperLimit: 108000, shifRate: 2.75, shifMinimum: 300,
+    ahlEmployeeRate: 1.5, ahlEmployerRate: 1.5, personalRelief: 2400, nitaLevy: 50,
+    insuranceReliefCap: 5000, telephoneThreshold: 5000, mealsThreshold: 5000,
+    allowableDeductionCap: 30000, perDiemThreshold: 10000, daysInMonth: 30,
+    secondaryFlatRate: 35, contractorWhtRate: 5, pwdExemption: 150000,
+    jobPositions: [], departments: [], subDepartments: [],
+    employeeNumberPrefix: 'EMP', employeeNumberPadding: 3, employeeNumberSeparator: '',
+    employeeNumberIncludeYear: false, employeeNumberIncludeMonth: false,
+    employeeNumberNext: 1,
+    businessName: '',
+    businessLogoUrl: '',
+    workingDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+    workStartTime: '08:00',
+    workHoursPerDay: 8,
+    breakMinutes: 60
   };
 }
 
 async function loadSettings({ force = false } = {}) {
   if (cachedSettings && !force) return cachedSettings;
   if (!settingsLoadPromise || force) {
-    settingsLoadPromise = supabase.from('payroll_settings').select('*').maybeSingle().then(({ data }) => {
-      cachedSettings = data || defaultSettings();
+    settingsLoadPromise = getDoc(businessDoc('settings', 'main')).then(snap => {
+      cachedSettings = snap.exists() ? snap.data() : defaultSettings();
       return cachedSettings;
     });
   }
@@ -245,13 +260,14 @@ function compHistoryEl(sectionKey, part) {
 
 function compHistoryItemsFor(sectionKey) {
   const keys = COMP_HISTORY_SECTIONS[sectionKey].types.map(t => t.key);
-  return compensationItemsCache.filter(i => keys.includes(i.component_key));
+  return compensationItemsCache.filter(i => keys.includes(i.componentKey));
 }
 
 async function loadCompensationItems(employeeId) {
   if (!employeeId) { compensationItemsCache = []; return; }
-  const { data } = await supabase.from('employee_compensation_items').select('*').eq('employee_id', employeeId).order('start_date', { ascending: false });
-  compensationItemsCache = data || [];
+  const q = query(businessCollection('employeeCompensationItems'), where('employeeId', '==', employeeId));
+  const snap = await getDocs(q);
+  compensationItemsCache = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
 }
 
 function renderCompHistoryTypeSelect(sectionKey) {
@@ -273,8 +289,8 @@ function renderCompHistorySection(sectionKey) {
   const showExpired = compHistoryEl(sectionKey, 'showExpired').checked;
   const today = todayStrLocal();
   const items = compHistoryItemsFor(sectionKey)
-    .filter(i => showExpired || !i.end_date || i.end_date >= today)
-    .sort((a, b) => (a.start_date < b.start_date ? 1 : -1));
+    .filter(i => showExpired || !i.endDate || i.endDate >= today)
+    .sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
 
   const colCount = (cfg.hasTypeSelect ? 1 : 0) + 4;
   const tbody = compHistoryEl(sectionKey, 'tableBody');
@@ -283,8 +299,8 @@ function renderCompHistorySection(sectionKey) {
         <tr data-id="${i.id}">
           ${cfg.hasTypeSelect ? `<td>${i.label}</td>` : ''}
           <td>${rawMoney(i.amount)}</td>
-          <td>${i.start_date}</td>
-          <td>${i.end_date || '—'}</td>
+          <td>${i.startDate}</td>
+          <td>${i.endDate || '—'}</td>
           <td>
             <button type="button" class="ghost-button comp-history-edit-btn" data-section="${sectionKey}" data-id="${i.id}">Edit</button>
             <button type="button" class="ghost-button comp-history-delete-btn" data-section="${sectionKey}" data-id="${i.id}">Delete</button>
@@ -333,9 +349,9 @@ function findConflictingCompItem(componentKey, label, startDate, endDate, exclud
   const normalizedLabel = label.trim().toLowerCase();
   return compensationItemsCache.find(i => {
     if (i.id === excludeId) return false;
-    if (i.component_key !== componentKey) return false;
+    if (i.componentKey !== componentKey) return false;
     if ((i.label || '').trim().toLowerCase() !== normalizedLabel) return false;
-    return compHistoryOverlaps(startDate, endDate, i.start_date, i.end_date);
+    return compHistoryOverlaps(startDate, endDate, i.startDate, i.endDate);
   });
 }
 
@@ -383,7 +399,7 @@ async function submitCompHistoryEntry(sectionKey) {
   const editingId = compHistoryEditingId[sectionKey];
   const conflict = findConflictingCompItem(componentKey, label, startDate, endDate, editingId);
   if (conflict) {
-    errorEl.textContent = `This overlaps an existing "${conflict.label}" entry (${conflict.start_date} to ${conflict.end_date || 'ongoing'}).`;
+    errorEl.textContent = `This overlaps an existing "${conflict.label}" entry (${conflict.startDate} to ${conflict.endDate || 'ongoing'}).`;
     errorEl.hidden = false;
     return;
   }
@@ -392,16 +408,13 @@ async function submitCompHistoryEntry(sectionKey) {
   addBtn.disabled = true;
   try {
     if (editingId) {
-      const { error } = await supabase.from('employee_compensation_items').update({
-        component_key: componentKey, label, amount, start_date: startDate, end_date: endDate, updated_at: new Date().toISOString()
-      }).eq('id', editingId);
-      if (error) throw error;
-    } else {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from('employee_compensation_items').insert({
-        user_id: user.id, employee_id: currentEmployeeId, component_key: componentKey, label, amount, start_date: startDate, end_date: endDate
+      await updateDoc(businessDoc('employeeCompensationItems', editingId), {
+        componentKey, label, amount, startDate, endDate, updatedAt: new Date().toISOString()
       });
-      if (error) throw error;
+    } else {
+      await addDoc(businessCollection('employeeCompensationItems'), {
+        employeeId: currentEmployeeId, componentKey, label, amount, startDate, endDate, createdAt: new Date().toISOString()
+      });
     }
     await loadCompensationItems(currentEmployeeId);
     renderCompHistorySection(sectionKey);
@@ -415,11 +428,13 @@ async function submitCompHistoryEntry(sectionKey) {
 }
 
 async function deleteCompHistoryItem(sectionKey, id) {
-  const { error } = await supabase.from('employee_compensation_items').delete().eq('id', id);
-  if (!error) {
+  try {
+    await deleteDoc(businessDoc('employeeCompensationItems', id));
     if (compHistoryEditingId[sectionKey] === id) resetCompHistoryForm(sectionKey);
     await loadCompensationItems(currentEmployeeId);
     renderCompHistorySection(sectionKey);
+  } catch {
+    // Best-effort -- the row simply stays if the delete failed.
   }
 }
 
@@ -436,14 +451,14 @@ function wireCompHistorySection(sectionKey) {
       compHistoryEditingId[sectionKey] = item.id;
       if (cfg.hasTypeSelect) {
         const typeSelect = compHistoryEl(sectionKey, 'typeSelect');
-        typeSelect.value = item.component_key;
+        typeSelect.value = item.componentKey;
         typeSelect.dispatchEvent(new Event('change'));
-        const type = cfg.types.find(t => t.key === item.component_key);
+        const type = cfg.types.find(t => t.key === item.componentKey);
         if (type?.bucket) compHistoryEl(sectionKey, 'labelInput').value = item.label;
       }
       compHistoryEl(sectionKey, 'amount').value = rawMoney(item.amount);
-      compHistoryEl(sectionKey, 'start').value = item.start_date;
-      compHistoryEl(sectionKey, 'end').value = item.end_date || '';
+      compHistoryEl(sectionKey, 'start').value = item.startDate;
+      compHistoryEl(sectionKey, 'end').value = item.endDate || '';
       compHistoryEl(sectionKey, 'addBtn').textContent = 'Update entry';
     }
     if (delBtn) deleteCompHistoryItem(sectionKey, delBtn.dataset.id);
@@ -522,9 +537,9 @@ const subDepartmentDropdown = createLookupDropdown('employeeSubDepartment');
 
 async function populateJobSelects(employee) {
   const settings = await loadSettings();
-  jobPositionDropdown.setOptions(settings.job_positions || [], employee?.job_position);
+  jobPositionDropdown.setOptions(settings.jobPositions || [], employee?.jobPosition);
   departmentDropdown.setOptions(settings.departments || [], employee?.department);
-  subDepartmentDropdown.setOptions(settings.sub_departments || [], employee?.sub_department);
+  subDepartmentDropdown.setOptions(settings.subDepartments || [], employee?.subDepartment);
 }
 
 function closeEmployeeTypePanel() {
@@ -592,14 +607,14 @@ function resetForm() {
 function populateForm(employee) {
   currentEmployeeId = employee.id;
   currentEmployeeStatus = employee.status;
-  employeeFormTitle.textContent = `${employee.first_name} ${employee.last_name}`;
-  employeeFormNumber.hidden = !employee.employee_number;
-  employeeFormNumber.textContent = employee.employee_number || '';
+  employeeFormTitle.textContent = `${employee.firstName} ${employee.lastName}`;
+  employeeFormNumber.hidden = !employee.employeeNumber;
+  employeeFormNumber.textContent = employee.employeeNumber || '';
   employeeTerminateBtn.hidden = employee.status !== 'active';
   employeeRehireBtn.hidden = employee.status !== 'terminated';
 
-  document.getElementById('employeeFirstName').value = employee.first_name || '';
-  document.getElementById('employeeLastName').value = employee.last_name || '';
+  document.getElementById('employeeFirstName').value = employee.firstName || '';
+  document.getElementById('employeeLastName').value = employee.lastName || '';
   document.getElementById('employeeEmail').value = employee.email || '';
   document.getElementById('employeePhone').value = employee.phone || '';
   document.getElementById('employeeGender').value = employee.gender || '';
@@ -607,9 +622,9 @@ function populateForm(employee) {
   // populateJobSelects(employee), which must run before this so the
   // relevant <option> exists (including a fallback if it was since
   // removed from Settings) before we try to select it.
-  document.getElementById('employeeType').value = employee.employee_type || 'primary';
+  document.getElementById('employeeType').value = employee.employeeType || 'primary';
   syncEmployeeTypeTrigger();
-  document.getElementById('employeeContractStart').value = employee.contract_start_date || '';
+  document.getElementById('employeeContractStart').value = employee.contractStartDate || '';
 
   const comp = employee.compensation || {};
   document.getElementById('employeeBasicPay').value = comp.basicPay ? rawMoney(comp.basicPay) : '';
@@ -623,7 +638,7 @@ function populateForm(employee) {
   document.getElementById('employeeEducationInsurance').value = comp.educationInsurance ? rawMoney(comp.educationInsurance) : '';
   document.getElementById('employeeOtherDeductions').value = comp.otherDeductions ? rawMoney(comp.otherDeductions) : '';
 
-  const toggles = employee.statutory_toggles || {};
+  const toggles = employee.statutoryToggles || {};
   earningComponents.forEach(item => {
     const saved = toggles[item.id] || {};
     ['Nssf', 'Shif', 'Ahl'].forEach(stat => {
@@ -653,60 +668,57 @@ function collectFormData() {
   });
 
   return {
-    first_name: document.getElementById('employeeFirstName').value.trim(),
-    last_name: document.getElementById('employeeLastName').value.trim(),
+    firstName: document.getElementById('employeeFirstName').value.trim(),
+    lastName: document.getElementById('employeeLastName').value.trim(),
     email: document.getElementById('employeeEmail').value.trim() || null,
     phone: document.getElementById('employeePhone').value.trim() || null,
     gender: document.getElementById('employeeGender').value || null,
-    job_position: document.getElementById('employeeJobPosition').value.trim() || null,
+    jobPosition: document.getElementById('employeeJobPosition').value.trim() || null,
     department: document.getElementById('employeeDepartment').value.trim() || null,
-    sub_department: document.getElementById('employeeSubDepartment').value.trim() || null,
-    employee_type: document.getElementById('employeeType').value,
-    contract_start_date: document.getElementById('employeeContractStart').value || null,
+    subDepartment: document.getElementById('employeeSubDepartment').value.trim() || null,
+    employeeType: document.getElementById('employeeType').value,
+    contractStartDate: document.getElementById('employeeContractStart').value || null,
     compensation,
-    statutory_toggles: statutoryToggles,
-    updated_at: new Date().toISOString()
+    statutoryToggles,
+    updatedAt: new Date().toISOString()
   };
 }
 
 async function loadEmployees() {
   employeesLoaded = true;
-  let query = supabase.from('employees').select('*').order('first_name', { ascending: true });
-  if (currentStatusFilter !== 'all') query = query.eq('status', currentStatusFilter);
-
-  const { data, error } = await query;
-  if (error) {
+  try {
+    let q = query(businessCollection('employees'), orderBy('firstName', 'asc'));
+    if (currentStatusFilter !== 'all') q = query(businessCollection('employees'), where('status', '==', currentStatusFilter), orderBy('firstName', 'asc'));
+    const snap = await getDocs(q);
+    renderEmployeeTable(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    checkMissingNumbers();
+  } catch {
     employeeTableBody.innerHTML = '';
     employeesEmptyState.hidden = false;
     employeesEmptyState.textContent = 'Could not load employees. Please try again.';
-    return;
   }
-
-  renderEmployeeTable(data || []);
-  checkMissingNumbers();
 }
 
 // Scoped to all employees regardless of the current status filter, so
 // the button doesn't stay hidden just because the visible tab happens
 // to be fully numbered while another status bucket isn't.
 async function checkMissingNumbers() {
-  const { count } = await supabase.from('employees').select('id', { count: 'exact', head: true }).is('employee_number', null);
-  assignMissingNumbersBtn.hidden = !count;
+  const q = query(businessCollection('employees'), where('employeeNumber', '==', null));
+  const snap = await getCountFromServer(q);
+  assignMissingNumbersBtn.hidden = !snap.data().count;
 }
 
 assignMissingNumbersBtn.addEventListener('click', async () => {
   assignMissingNumbersBtn.disabled = true;
   assignMissingNumbersInfo.hidden = true;
   try {
-    const { data: missing, error } = await supabase.from('employees').select('id').is('employee_number', null);
-    if (error) throw error;
+    const q = query(businessCollection('employees'), where('employeeNumber', '==', null));
+    const snap = await getDocs(q);
 
     let assigned = 0;
-    for (const emp of missing || []) {
-      const { data: employeeNumber, error: numberError } = await supabase.rpc('next_employee_number');
-      if (numberError) throw numberError;
-      const { error: updateError } = await supabase.from('employees').update({ employee_number: employeeNumber }).eq('id', emp.id);
-      if (updateError) throw updateError;
+    for (const empDoc of snap.docs) {
+      const { employeeNumber } = await callFunction('/api/next-employee-number');
+      await updateDoc(businessDoc('employees', empDoc.id), { employeeNumber });
       assigned += 1;
     }
 
@@ -728,8 +740,8 @@ assignMissingNumbersBtn.addEventListener('click', async () => {
 // employment fields + basic pay only (not the full per-component
 // allowance/benefit matrix, which is added afterward by editing the
 // employee normally). Employee numbers are never a column: they're
-// always server-assigned via next_employee_number(), same as a single
-// manual add (see the submit handler above).
+// always server-assigned via /api/next-employee-number, same as a
+// single manual add (see the submit handler above).
 // ---------------------------------------------------------------------
 
 const BULK_UPLOAD_HEADERS = [
@@ -778,9 +790,9 @@ bulkUploadTemplateBtn.addEventListener('click', async () => {
   bulkUploadTemplateBtn.disabled = true;
   try {
     const settings = await loadSettings();
-    const jobPositions = settings.job_positions || [];
+    const jobPositions = settings.jobPositions || [];
     const departments = settings.departments || [];
-    const subDepartments = settings.sub_departments || [];
+    const subDepartments = settings.subDepartments || [];
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Employees');
@@ -882,19 +894,20 @@ function bulkUploadRowToPayload(row) {
 
   return {
     payload: {
-      first_name: firstName,
-      last_name: lastName,
+      firstName,
+      lastName,
       email: String(row['Email'] || '').trim() || null,
       phone: String(row['Phone'] || '').trim() || null,
       gender,
-      job_position: String(row['Job position'] || '').trim() || null,
+      jobPosition: String(row['Job position'] || '').trim() || null,
       department: String(row['Department'] || '').trim() || null,
-      sub_department: String(row['Sub department'] || '').trim() || null,
-      employee_type: employeeType,
-      contract_start_date: formatBulkUploadDate(row['Contract start date (YYYY-MM-DD)'] || row['Contract start date']),
+      subDepartment: String(row['Sub department'] || '').trim() || null,
+      employeeType,
+      contractStartDate: formatBulkUploadDate(row['Contract start date (YYYY-MM-DD)'] || row['Contract start date']),
+      status: 'active',
       compensation,
-      statutory_toggles: statutoryToggles,
-      updated_at: new Date().toISOString()
+      statutoryToggles,
+      updatedAt: new Date().toISOString()
     }
   };
 }
@@ -917,7 +930,6 @@ bulkUploadImportBtn.addEventListener('click', async () => {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-    const { data: { user } } = await supabase.auth.getUser();
     let created = 0;
     const skipped = [];
 
@@ -929,10 +941,8 @@ bulkUploadImportBtn.addEventListener('click', async () => {
         continue;
       }
       try {
-        const { data: employeeNumber, error: numberError } = await supabase.rpc('next_employee_number');
-        if (numberError) throw numberError;
-        const { error: insertError } = await supabase.from('employees').insert({ ...payload, employee_number: employeeNumber, user_id: user.id });
-        if (insertError) throw insertError;
+        const { employeeNumber } = await callFunction('/api/next-employee-number');
+        await addDoc(businessCollection('employees'), { ...payload, employeeNumber, authUserId: null, portalBlocked: false, createdAt: new Date().toISOString() });
         created += 1;
       } catch (err) {
         skipped.push({ rowNumber, reason: err.message || 'Could not save this row.' });
@@ -959,18 +969,18 @@ function renderEmployeeTable(employees) {
   employeesEmptyState.textContent = 'No employees here yet.';
 
   employeeTableBody.innerHTML = employees.map(emp => {
-    const portalCell = emp.auth_user_id
+    const portalCell = emp.authUserId
       ? '<span class="status-pill status-active">Active</span>'
       : emp.email
         ? `<button type="button" class="ghost-button employee-invite-btn" data-id="${emp.id}">Invite</button>`
         : '<span class="hint">No email on file</span>';
     return `
     <tr data-id="${emp.id}">
-      <td>${emp.employee_number || '—'}</td>
-      <td>${emp.first_name} ${emp.last_name}</td>
-      <td>${emp.job_position || '—'}</td>
+      <td>${emp.employeeNumber || '—'}</td>
+      <td>${emp.firstName} ${emp.lastName}</td>
+      <td>${emp.jobPosition || '—'}</td>
       <td>${emp.department || '—'}</td>
-      <td>${employeeTypeLabels[emp.employee_type] || emp.employee_type}</td>
+      <td>${employeeTypeLabels[emp.employeeType] || emp.employeeType}</td>
       <td><span class="status-pill status-${emp.status}">${emp.status === 'active' ? 'Active' : 'Terminated'}</span></td>
       <td>${portalCell}</td>
       <td><button type="button" class="ghost-button employee-edit-btn" data-id="${emp.id}">Edit</button></td>
@@ -1002,8 +1012,9 @@ statusFilterButtons.forEach(btn => {
 employeeTableBody.addEventListener('click', async event => {
   const btn = event.target.closest('.employee-edit-btn');
   if (!btn) return;
-  const { data, error } = await supabase.from('employees').select('*').eq('id', btn.dataset.id).single();
-  if (error || !data) return;
+  const snap = await getDoc(businessDoc('employees', btn.dataset.id));
+  if (!snap.exists()) return;
+  const data = { id: snap.id, ...snap.data() };
   resetForm();
   renderCompensationFields();
   await populateJobSelects(data);
@@ -1037,7 +1048,7 @@ employeeForm.addEventListener('submit', async event => {
   employeeFormError.hidden = true;
 
   const payload = collectFormData();
-  if (!payload.first_name || !payload.last_name) {
+  if (!payload.firstName || !payload.lastName) {
     employeeFormError.textContent = 'First and last name are required.';
     employeeFormError.hidden = false;
     return;
@@ -1046,14 +1057,10 @@ employeeForm.addEventListener('submit', async event => {
   employeeSaveBtn.disabled = true;
   try {
     if (currentEmployeeId) {
-      const { error } = await supabase.from('employees').update(payload).eq('id', currentEmployeeId);
-      if (error) throw error;
+      await updateDoc(businessDoc('employees', currentEmployeeId), payload);
     } else {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: employeeNumber, error: numberError } = await supabase.rpc('next_employee_number');
-      if (numberError) throw numberError;
-      const { error } = await supabase.from('employees').insert({ ...payload, employee_number: employeeNumber, user_id: user.id });
-      if (error) throw error;
+      const { employeeNumber } = await callFunction('/api/next-employee-number');
+      await addDoc(businessCollection('employees'), { ...payload, employeeNumber, status: 'active', authUserId: null, portalBlocked: false, createdAt: new Date().toISOString() });
     }
     showDirectory();
   } catch (err) {
@@ -1085,15 +1092,15 @@ terminateForm.addEventListener('submit', async event => {
     return;
   }
 
-  const { error } = await supabase.from('employees').update({
-    status: 'terminated',
-    termination_date: terminateDate.value,
-    termination_reason: terminateReason.value.trim(),
-    updated_at: new Date().toISOString()
-  }).eq('id', currentEmployeeId);
-
-  if (error) {
-    terminateError.textContent = error.message || 'Could not terminate employee.';
+  try {
+    await updateDoc(businessDoc('employees', currentEmployeeId), {
+      status: 'terminated',
+      terminationDate: terminateDate.value,
+      terminationReason: terminateReason.value.trim(),
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    terminateError.textContent = err.message || 'Could not terminate employee.';
     terminateError.hidden = false;
     return;
   }
@@ -1104,14 +1111,17 @@ terminateForm.addEventListener('submit', async event => {
 
 employeeRehireBtn.addEventListener('click', async () => {
   if (!currentEmployeeId) return;
-  const { error } = await supabase.from('employees').update({
-    status: 'active',
-    termination_date: null,
-    termination_reason: null,
-    updated_at: new Date().toISOString()
-  }).eq('id', currentEmployeeId);
-
-  if (!error) showDirectory();
+  try {
+    await updateDoc(businessDoc('employees', currentEmployeeId), {
+      status: 'active',
+      terminationDate: null,
+      terminationReason: null,
+      updatedAt: new Date().toISOString()
+    });
+    showDirectory();
+  } catch {
+    // Best-effort -- stays on the form if it failed.
+  }
 });
 
 function renderLookupList(key, items) {
@@ -1126,56 +1136,56 @@ function renderLookupList(key, items) {
 }
 
 function populateSettingsForm(s) {
-  document.getElementById('settingsBusinessName').value = s.business_name || '';
-  setLogoPreview(s.business_logo_url || null);
-  document.getElementById('settingsNssfRate').value = s.nssf_rate;
-  document.getElementById('settingsNssfUpperLimit').value = rawMoney(s.nssf_upper_limit);
-  document.getElementById('settingsShifRate').value = s.shif_rate;
-  document.getElementById('settingsShifMinimum').value = rawMoney(s.shif_minimum);
-  document.getElementById('settingsAhlEmployeeRate').value = s.ahl_employee_rate;
-  document.getElementById('settingsAhlEmployerRate').value = s.ahl_employer_rate;
-  document.getElementById('settingsPersonalRelief').value = rawMoney(s.personal_relief);
-  document.getElementById('settingsNitaLevy').value = rawMoney(s.nita_levy);
-  document.getElementById('settingsTelephoneThreshold').value = rawMoney(s.telephone_threshold);
-  document.getElementById('settingsMealsThreshold').value = rawMoney(s.meals_threshold);
-  document.getElementById('settingsAllowableDeductionCap').value = rawMoney(s.allowable_deduction_cap);
-  document.getElementById('settingsPerDiemThreshold').value = rawMoney(s.per_diem_threshold);
-  document.getElementById('settingsDaysInMonth').value = s.days_in_month;
-  document.getElementById('settingsInsuranceReliefCap').value = rawMoney(s.insurance_relief_cap);
-  document.getElementById('settingsSecondaryFlatRate').value = s.secondary_flat_rate;
-  document.getElementById('settingsContractorWhtRate').value = s.contractor_wht_rate;
-  document.getElementById('settingsPwdExemption').value = rawMoney(s.pwd_exemption);
-  renderLookupList('job_positions', s.job_positions || []);
+  document.getElementById('settingsBusinessName').value = s.businessName || '';
+  setLogoPreview(s.businessLogoUrl || null);
+  document.getElementById('settingsNssfRate').value = s.nssfRate;
+  document.getElementById('settingsNssfUpperLimit').value = rawMoney(s.nssfUpperLimit);
+  document.getElementById('settingsShifRate').value = s.shifRate;
+  document.getElementById('settingsShifMinimum').value = rawMoney(s.shifMinimum);
+  document.getElementById('settingsAhlEmployeeRate').value = s.ahlEmployeeRate;
+  document.getElementById('settingsAhlEmployerRate').value = s.ahlEmployerRate;
+  document.getElementById('settingsPersonalRelief').value = rawMoney(s.personalRelief);
+  document.getElementById('settingsNitaLevy').value = rawMoney(s.nitaLevy);
+  document.getElementById('settingsTelephoneThreshold').value = rawMoney(s.telephoneThreshold);
+  document.getElementById('settingsMealsThreshold').value = rawMoney(s.mealsThreshold);
+  document.getElementById('settingsAllowableDeductionCap').value = rawMoney(s.allowableDeductionCap);
+  document.getElementById('settingsPerDiemThreshold').value = rawMoney(s.perDiemThreshold);
+  document.getElementById('settingsDaysInMonth').value = s.daysInMonth;
+  document.getElementById('settingsInsuranceReliefCap').value = rawMoney(s.insuranceReliefCap);
+  document.getElementById('settingsSecondaryFlatRate').value = s.secondaryFlatRate;
+  document.getElementById('settingsContractorWhtRate').value = s.contractorWhtRate;
+  document.getElementById('settingsPwdExemption').value = rawMoney(s.pwdExemption);
+  renderLookupList('jobPositions', s.jobPositions || []);
   renderLookupList('departments', s.departments || []);
-  renderLookupList('sub_departments', s.sub_departments || []);
-  settingsEmpNumPrefix.value = s.employee_number_prefix ?? 'EMP';
-  settingsEmpNumPadding.value = s.employee_number_padding ?? 3;
-  settingsEmpNumSeparator.value = s.employee_number_separator ?? '';
-  settingsEmpNumIncludeYear.checked = !!s.employee_number_include_year;
-  settingsEmpNumIncludeMonth.checked = !!s.employee_number_include_month;
-  updateEmployeeNumberPreview(s.employee_number_next ?? 1);
+  renderLookupList('subDepartments', s.subDepartments || []);
+  settingsEmpNumPrefix.value = s.employeeNumberPrefix ?? 'EMP';
+  settingsEmpNumPadding.value = s.employeeNumberPadding ?? 3;
+  settingsEmpNumSeparator.value = s.employeeNumberSeparator ?? '';
+  settingsEmpNumIncludeYear.checked = !!s.employeeNumberIncludeYear;
+  settingsEmpNumIncludeMonth.checked = !!s.employeeNumberIncludeMonth;
+  updateEmployeeNumberPreview(s.employeeNumberNext ?? 1);
 
-  const workingDays = s.working_days || ['mon', 'tue', 'wed', 'thu', 'fri'];
+  const workingDays = s.workingDays || ['mon', 'tue', 'wed', 'thu', 'fri'];
   [...settingsWorkingDays.querySelectorAll('input')].forEach(cb => { cb.checked = workingDays.includes(cb.value); });
-  settingsWorkStartTime.value = s.work_start_time ? s.work_start_time.slice(0, 5) : '08:00';
-  settingsWorkHoursPerDay.value = s.work_hours_per_day ?? 8;
-  settingsBreakMinutes.value = s.break_minutes ?? 60;
+  settingsWorkStartTime.value = s.workStartTime ? s.workStartTime.slice(0, 5) : '08:00';
+  settingsWorkHoursPerDay.value = s.workHoursPerDay ?? 8;
+  settingsBreakMinutes.value = s.breakMinutes ?? 60;
   updateWorkEndTimePreview();
 
-  reportPasscodeStatus.textContent = s.report_passcode_hash
+  reportPasscodeStatus.textContent = s.reportPasscodeHash
     ? 'A report passcode is currently set.'
     : 'No report passcode is set -- reports can be downloaded without one.';
-  settingsReportPasscodeClearBtn.hidden = !s.report_passcode_hash;
+  settingsReportPasscodeClearBtn.hidden = !s.reportPasscodeHash;
   settingsReportPasscode.value = '';
   settingsReportPasscodeConfirm.value = '';
 
-  settingsLoginWindowEnabled.checked = !!s.login_window_enabled;
-  settingsLoginWindowStart.value = s.login_window_start ? s.login_window_start.slice(0, 5) : '08:00';
-  settingsLoginWindowEnd.value = s.login_window_end ? s.login_window_end.slice(0, 5) : '18:00';
-  settingsGeofenceEnabled.checked = !!s.login_geofence_enabled;
-  settingsGeofenceLat.value = s.login_geofence_latitude ?? '';
-  settingsGeofenceLng.value = s.login_geofence_longitude ?? '';
-  settingsGeofenceRadius.value = s.login_geofence_radius_meters ?? 500;
+  settingsLoginWindowEnabled.checked = !!s.loginWindowEnabled;
+  settingsLoginWindowStart.value = s.loginWindowStart ? s.loginWindowStart.slice(0, 5) : '08:00';
+  settingsLoginWindowEnd.value = s.loginWindowEnd ? s.loginWindowEnd.slice(0, 5) : '18:00';
+  settingsGeofenceEnabled.checked = !!s.loginGeofenceEnabled;
+  settingsGeofenceLat.value = s.loginGeofenceLatitude ?? '';
+  settingsGeofenceLng.value = s.loginGeofenceLongitude ?? '';
+  settingsGeofenceRadius.value = s.loginGeofenceRadiusMeters ?? 500;
 }
 
 function updateWorkEndTimePreview() {
@@ -1192,7 +1202,7 @@ function updateWorkEndTimePreview() {
   el.addEventListener('input', updateWorkEndTimePreview);
 });
 
-function updateEmployeeNumberPreview(nextNumber = cachedSettings?.employee_number_next ?? 1) {
+function updateEmployeeNumberPreview(nextNumber = cachedSettings?.employeeNumberNext ?? 1) {
   const prefix = settingsEmpNumPrefix.value.trim();
   const padding = Math.max(toNumber(settingsEmpNumPadding.value) || 3, 1);
   const separator = settingsEmpNumSeparator.value;
@@ -1215,7 +1225,7 @@ function setSettingsPageBusy(busy) {
 
 // ---------------------------------------------------------------------
 // Business logo — upload or paste-a-URL-to-fetch, both funnel through
-// the same client-side resize step before landing in Supabase Storage,
+// the same client-side resize step before landing in Firebase Storage,
 // so a fetched favicon and a manually uploaded file end up identical.
 // ---------------------------------------------------------------------
 
@@ -1250,12 +1260,11 @@ function resizeImageToBlob(source, maxDim = 320) {
 }
 
 async function uploadLogoBlob(blob) {
-  const { data: { user } } = await supabase.auth.getUser();
-  const path = `${user.id}/logo.png`;
-  const { error } = await supabase.storage.from('business-logos').upload(path, blob, { upsert: true, contentType: 'image/png' });
-  if (error) throw error;
-  const { data } = supabase.storage.from('business-logos').getPublicUrl(path);
-  return `${data.publicUrl}?v=${Date.now()}`;
+  const path = `business-logos/${auth.currentUser.uid}/logo.png`;
+  const storageRef = ref(storage, path);
+  await uploadBytes(storageRef, blob, { contentType: 'image/png' });
+  const url = await getDownloadURL(storageRef);
+  return `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`;
 }
 
 async function processAndUploadLogo(source) {
@@ -1310,9 +1319,11 @@ settingsLogoRemoveBtn.addEventListener('click', () => {
 
 // ---------------------------------------------------------------------
 // Approval workflows -- appoint portal-active employees as required
-// approvers for payroll runs / leave applications. Deliberately kept
-// simple: one workflow per action type, delete-and-reinsert its approver
-// list on every save (small lists, no need for a diffing update).
+// approvers for payroll runs / leave applications. One workflow doc per
+// action type (doc id = the action type itself, e.g. "payroll_run"),
+// with an `approvers` subcollection (doc id = employeeId) -- replacing
+// the old approval_workflows/approval_workflow_approvers tables and
+// their delete-and-reinsert save pattern.
 // ---------------------------------------------------------------------
 
 const approvalWorkflowEligibleHint = document.getElementById('approvalWorkflowEligibleHint');
@@ -1328,31 +1339,31 @@ async function loadApprovalWorkflows() {
   approvalWorkflowError.hidden = true;
   approvalWorkflowInfo.hidden = true;
 
-  const { data: eligible } = await supabase
-    .from('employees')
-    .select('id, first_name, last_name')
-    .not('auth_user_id', 'is', null)
-    .eq('status', 'active')
-    .order('first_name');
-  const eligibleEmployees = eligible || [];
+  const employeesSnap = await getDocs(query(businessCollection('employees'), where('status', '==', 'active'), orderBy('firstName')));
+  const eligibleEmployees = employeesSnap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(e => e.authUserId);
   approvalWorkflowEligibleHint.hidden = eligibleEmployees.length > 0;
 
-  const { data: workflows } = await supabase.from('approval_workflows').select('id, action_type, is_active');
-  const { data: approvers } = await supabase.from('approval_workflow_approvers').select('workflow_id, employee_id');
+  const [payrollWorkflowSnap, leaveWorkflowSnap] = await Promise.all([
+    getDoc(businessDoc('approvalWorkflows', 'payroll_run')),
+    getDoc(businessDoc('approvalWorkflows', 'leave_application'))
+  ]);
+  const [payrollApproversSnap, leaveApproversSnap] = await Promise.all([
+    getDocs(collection(businessDoc('approvalWorkflows', 'payroll_run'), 'approvers')),
+    getDocs(collection(businessDoc('approvalWorkflows', 'leave_application'), 'approvers'))
+  ]);
+  const payrollApproverIds = new Set(payrollApproversSnap.docs.map(d => d.id));
+  const leaveApproverIds = new Set(leaveApproversSnap.docs.map(d => d.id));
 
-  const payrollWorkflow = (workflows || []).find(w => w.action_type === 'payroll_run');
-  const leaveWorkflow = (workflows || []).find(w => w.action_type === 'leave_application');
-  const payrollApproverIds = new Set((approvers || []).filter(a => a.workflow_id === payrollWorkflow?.id).map(a => a.employee_id));
-  const leaveApproverIds = new Set((approvers || []).filter(a => a.workflow_id === leaveWorkflow?.id).map(a => a.employee_id));
-
-  approvalWorkflowPayrollActive.checked = !!payrollWorkflow?.is_active;
-  approvalWorkflowLeaveActive.checked = !!leaveWorkflow?.is_active;
+  approvalWorkflowPayrollActive.checked = !!(payrollWorkflowSnap.exists() && payrollWorkflowSnap.data().isActive);
+  approvalWorkflowLeaveActive.checked = !!(leaveWorkflowSnap.exists() && leaveWorkflowSnap.data().isActive);
 
   const renderChecklist = (container, selectedIds) => {
     container.innerHTML = eligibleEmployees.map(e => `
       <label class="payroll-employee-row">
         <input type="checkbox" value="${e.id}" ${selectedIds.has(e.id) ? 'checked' : ''} />
-        <span class="employee-name">${e.first_name} ${e.last_name}</span>
+        <span class="employee-name">${e.firstName} ${e.lastName}</span>
       </label>
     `).join('');
   };
@@ -1394,25 +1405,16 @@ approvalWorkflowLeaveActive.addEventListener('change', refreshApprovalWorkflowDi
 approvalWorkflowPayrollApprovers.addEventListener('change', refreshApprovalWorkflowDirtyState);
 approvalWorkflowLeaveApprovers.addEventListener('change', refreshApprovalWorkflowDirtyState);
 
-async function saveApprovalWorkflow(actionType, isActive, container, ownerId) {
+async function saveApprovalWorkflow(actionType, isActive, container) {
   const approverIds = [...container.querySelectorAll('input[type="checkbox"]:checked')].map(cb => cb.value);
 
-  const { data: workflow, error: upsertError } = await supabase
-    .from('approval_workflows')
-    .upsert({ user_id: ownerId, action_type: actionType, is_active: isActive, updated_at: new Date().toISOString() }, { onConflict: 'user_id,action_type' })
-    .select()
-    .single();
-  if (upsertError) throw upsertError;
+  const workflowRef = businessDoc('approvalWorkflows', actionType);
+  await setDoc(workflowRef, { isActive, updatedAt: new Date().toISOString() }, { merge: true });
 
-  const { error: deleteError } = await supabase.from('approval_workflow_approvers').delete().eq('workflow_id', workflow.id);
-  if (deleteError) throw deleteError;
-
-  if (approverIds.length) {
-    const { error: insertError } = await supabase.from('approval_workflow_approvers').insert(
-      approverIds.map(employeeId => ({ workflow_id: workflow.id, employee_id: employeeId, user_id: ownerId }))
-    );
-    if (insertError) throw insertError;
-  }
+  const approversRef = collection(workflowRef, 'approvers');
+  const existingSnap = await getDocs(approversRef);
+  await Promise.all(existingSnap.docs.map(d => deleteDoc(d.ref)));
+  await Promise.all(approverIds.map(employeeId => setDoc(doc(approversRef, employeeId), { addedAt: new Date().toISOString() })));
 }
 
 approvalWorkflowSaveBtn.addEventListener('click', async () => {
@@ -1420,9 +1422,8 @@ approvalWorkflowSaveBtn.addEventListener('click', async () => {
   approvalWorkflowInfo.hidden = true;
   approvalWorkflowSaveBtn.disabled = true;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    await saveApprovalWorkflow('payroll_run', approvalWorkflowPayrollActive.checked, approvalWorkflowPayrollApprovers, user.id);
-    await saveApprovalWorkflow('leave_application', approvalWorkflowLeaveActive.checked, approvalWorkflowLeaveApprovers, user.id);
+    await saveApprovalWorkflow('payroll_run', approvalWorkflowPayrollActive.checked, approvalWorkflowPayrollApprovers);
+    await saveApprovalWorkflow('leave_application', approvalWorkflowLeaveActive.checked, approvalWorkflowLeaveApprovers);
     approvalWorkflowInfo.textContent = 'Approval workflows saved.';
     approvalWorkflowInfo.hidden = false;
     // Reload from the database (not just re-mark the current form clean)
@@ -1464,20 +1465,14 @@ settingsReportPasscodeSaveBtn.addEventListener('click', async () => {
 
   settingsReportPasscodeSaveBtn.disabled = true;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    const hash = await hashReportPasscode(passcode, user.id);
-    const { data, error } = await supabase
-      .from('payroll_settings')
-      .upsert({ user_id: user.id, report_passcode_hash: hash, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
-      .select()
-      .single();
-    if (error) throw error;
+    const hash = await hashReportPasscode(passcode, auth.currentUser.uid);
+    await setDoc(businessDoc('settings', 'main'), { reportPasscodeHash: hash, updatedAt: new Date().toISOString() }, { merge: true });
 
-    cachedSettings = data;
+    cachedSettings = await loadSettings({ force: true });
     invalidateReportPasscodeCache();
     settingsReportPasscodeInfo.textContent = 'Report passcode saved.';
     settingsReportPasscodeInfo.hidden = false;
-    populateSettingsForm(data);
+    populateSettingsForm(cachedSettings);
   } catch (err) {
     settingsReportPasscodeError.textContent = err.message || 'Could not save the passcode.';
     settingsReportPasscodeError.hidden = false;
@@ -1491,19 +1486,13 @@ settingsReportPasscodeClearBtn.addEventListener('click', async () => {
   settingsReportPasscodeInfo.hidden = true;
   settingsReportPasscodeClearBtn.disabled = true;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase
-      .from('payroll_settings')
-      .upsert({ user_id: user.id, report_passcode_hash: null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
-      .select()
-      .single();
-    if (error) throw error;
+    await setDoc(businessDoc('settings', 'main'), { reportPasscodeHash: null, updatedAt: new Date().toISOString() }, { merge: true });
 
-    cachedSettings = data;
+    cachedSettings = await loadSettings({ force: true });
     invalidateReportPasscodeCache();
     settingsReportPasscodeInfo.textContent = 'Report passcode removed -- reports can now be downloaded without one.';
     settingsReportPasscodeInfo.hidden = false;
-    populateSettingsForm(data);
+    populateSettingsForm(cachedSettings);
   } catch (err) {
     settingsReportPasscodeError.textContent = err.message || 'Could not remove the passcode.';
     settingsReportPasscodeError.hidden = false;
@@ -1555,28 +1544,21 @@ settingsLoginSecuritySaveBtn.addEventListener('click', async () => {
 
   settingsLoginSecuritySaveBtn.disabled = true;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase
-      .from('payroll_settings')
-      .upsert({
-        user_id: user.id,
-        login_window_enabled: settingsLoginWindowEnabled.checked,
-        login_window_start: settingsLoginWindowStart.value || '08:00',
-        login_window_end: settingsLoginWindowEnd.value || '18:00',
-        login_geofence_enabled: geofenceEnabled,
-        login_geofence_latitude: lat,
-        login_geofence_longitude: lng,
-        login_geofence_radius_meters: radius,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'user_id' })
-      .select()
-      .single();
-    if (error) throw error;
+    await setDoc(businessDoc('settings', 'main'), {
+      loginWindowEnabled: settingsLoginWindowEnabled.checked,
+      loginWindowStart: settingsLoginWindowStart.value || '08:00',
+      loginWindowEnd: settingsLoginWindowEnd.value || '18:00',
+      loginGeofenceEnabled: geofenceEnabled,
+      loginGeofenceLatitude: lat,
+      loginGeofenceLongitude: lng,
+      loginGeofenceRadiusMeters: radius,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
 
-    cachedSettings = data;
+    cachedSettings = await loadSettings({ force: true });
     settingsLoginSecurityInfo.textContent = 'Security settings saved.';
     settingsLoginSecurityInfo.hidden = false;
-    populateSettingsForm(data);
+    populateSettingsForm(cachedSettings);
   } catch (err) {
     settingsLoginSecurityError.textContent = err.message || 'Could not save security settings.';
     settingsLoginSecurityError.hidden = false;
@@ -1630,51 +1612,44 @@ saveSettingsBtn.addEventListener('click', async () => {
   settingsInfo.hidden = true;
 
   const payload = {
-    business_name: document.getElementById('settingsBusinessName').value.trim(),
-    business_logo_url: pendingLogoUrl || null,
-    working_days: [...settingsWorkingDays.querySelectorAll('input:checked')].map(cb => cb.value),
-    work_start_time: settingsWorkStartTime.value || '08:00',
-    work_hours_per_day: toNumber(settingsWorkHoursPerDay.value) || 8,
-    break_minutes: Math.round(toNumber(settingsBreakMinutes.value)) || 0,
-    nssf_rate: toNumber(document.getElementById('settingsNssfRate').value),
-    nssf_upper_limit: toNumber(document.getElementById('settingsNssfUpperLimit').value),
-    shif_rate: toNumber(document.getElementById('settingsShifRate').value),
-    shif_minimum: toNumber(document.getElementById('settingsShifMinimum').value),
-    ahl_employee_rate: toNumber(document.getElementById('settingsAhlEmployeeRate').value),
-    ahl_employer_rate: toNumber(document.getElementById('settingsAhlEmployerRate').value),
-    personal_relief: toNumber(document.getElementById('settingsPersonalRelief').value),
-    nita_levy: toNumber(document.getElementById('settingsNitaLevy').value),
-    insurance_relief_cap: toNumber(document.getElementById('settingsInsuranceReliefCap').value),
-    telephone_threshold: toNumber(document.getElementById('settingsTelephoneThreshold').value),
-    meals_threshold: toNumber(document.getElementById('settingsMealsThreshold').value),
-    allowable_deduction_cap: toNumber(document.getElementById('settingsAllowableDeductionCap').value),
-    per_diem_threshold: toNumber(document.getElementById('settingsPerDiemThreshold').value),
-    days_in_month: toNumber(document.getElementById('settingsDaysInMonth').value),
-    secondary_flat_rate: toNumber(document.getElementById('settingsSecondaryFlatRate').value),
-    contractor_wht_rate: toNumber(document.getElementById('settingsContractorWhtRate').value),
-    pwd_exemption: toNumber(document.getElementById('settingsPwdExemption').value),
-    job_positions: cachedSettings?.job_positions || [],
+    businessName: document.getElementById('settingsBusinessName').value.trim(),
+    businessLogoUrl: pendingLogoUrl || null,
+    workingDays: [...settingsWorkingDays.querySelectorAll('input:checked')].map(cb => cb.value),
+    workStartTime: settingsWorkStartTime.value || '08:00',
+    workHoursPerDay: toNumber(settingsWorkHoursPerDay.value) || 8,
+    breakMinutes: Math.round(toNumber(settingsBreakMinutes.value)) || 0,
+    nssfRate: toNumber(document.getElementById('settingsNssfRate').value),
+    nssfUpperLimit: toNumber(document.getElementById('settingsNssfUpperLimit').value),
+    shifRate: toNumber(document.getElementById('settingsShifRate').value),
+    shifMinimum: toNumber(document.getElementById('settingsShifMinimum').value),
+    ahlEmployeeRate: toNumber(document.getElementById('settingsAhlEmployeeRate').value),
+    ahlEmployerRate: toNumber(document.getElementById('settingsAhlEmployerRate').value),
+    personalRelief: toNumber(document.getElementById('settingsPersonalRelief').value),
+    nitaLevy: toNumber(document.getElementById('settingsNitaLevy').value),
+    insuranceReliefCap: toNumber(document.getElementById('settingsInsuranceReliefCap').value),
+    telephoneThreshold: toNumber(document.getElementById('settingsTelephoneThreshold').value),
+    mealsThreshold: toNumber(document.getElementById('settingsMealsThreshold').value),
+    allowableDeductionCap: toNumber(document.getElementById('settingsAllowableDeductionCap').value),
+    perDiemThreshold: toNumber(document.getElementById('settingsPerDiemThreshold').value),
+    daysInMonth: toNumber(document.getElementById('settingsDaysInMonth').value),
+    secondaryFlatRate: toNumber(document.getElementById('settingsSecondaryFlatRate').value),
+    contractorWhtRate: toNumber(document.getElementById('settingsContractorWhtRate').value),
+    pwdExemption: toNumber(document.getElementById('settingsPwdExemption').value),
+    jobPositions: cachedSettings?.jobPositions || [],
     departments: cachedSettings?.departments || [],
-    sub_departments: cachedSettings?.sub_departments || [],
-    employee_number_prefix: settingsEmpNumPrefix.value.trim() || 'EMP',
-    employee_number_padding: Math.max(toNumber(settingsEmpNumPadding.value) || 3, 1),
-    employee_number_separator: settingsEmpNumSeparator.value,
-    employee_number_include_year: settingsEmpNumIncludeYear.checked,
-    employee_number_include_month: settingsEmpNumIncludeMonth.checked,
-    updated_at: new Date().toISOString()
+    subDepartments: cachedSettings?.subDepartments || [],
+    employeeNumberPrefix: settingsEmpNumPrefix.value.trim() || 'EMP',
+    employeeNumberPadding: Math.max(toNumber(settingsEmpNumPadding.value) || 3, 1),
+    employeeNumberSeparator: settingsEmpNumSeparator.value,
+    employeeNumberIncludeYear: settingsEmpNumIncludeYear.checked,
+    employeeNumberIncludeMonth: settingsEmpNumIncludeMonth.checked,
+    updatedAt: new Date().toISOString()
   };
 
   saveSettingsBtn.disabled = true;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase
-      .from('payroll_settings')
-      .upsert({ ...payload, user_id: user.id }, { onConflict: 'user_id' })
-      .select()
-      .single();
-    if (error) throw error;
-
-    cachedSettings = data;
+    await setDoc(businessDoc('settings', 'main'), payload, { merge: true });
+    cachedSettings = await loadSettings({ force: true });
     settingsInfo.textContent = 'Settings saved.';
     settingsInfo.hidden = false;
   } catch (err) {

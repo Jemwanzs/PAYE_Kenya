@@ -1,9 +1,11 @@
-import { supabase } from './auth.js';
+import { db } from './auth.js';
+import { collection, query, orderBy, limit, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
-// Admin-only cross-tenant login log (see migrate_session_logs.sql). RLS
-// scopes what select() actually returns -- a non-admin session simply
-// gets zero rows back, so there's no separate client-side admin check
-// needed here beyond the nav button itself being hidden for them.
+// Admin-only cross-tenant login log (see firestore.rules). Rules scope
+// what getDocs() actually returns -- a non-admin session simply gets a
+// permission-denied error (caught below, same as an empty result), so
+// there's no separate client-side admin check needed here beyond the
+// nav button itself being hidden for them.
 
 const tableBody = document.getElementById('sessionLogsTableBody');
 const emptyState = document.getElementById('sessionLogsEmptyState');
@@ -24,10 +26,10 @@ function fmtDevice(userAgent) {
 }
 
 function fmtLocation(row) {
-  if (row.location_status === 'granted' && row.latitude != null && row.longitude != null) {
+  if (row.locationStatus === 'granted' && row.latitude != null && row.longitude != null) {
     return `${Number(row.latitude).toFixed(4)}, ${Number(row.longitude).toFixed(4)}`;
   }
-  return row.location_status === 'denied' ? 'Denied' : 'Unavailable';
+  return row.locationStatus === 'denied' ? 'Denied' : 'Unavailable';
 }
 
 function renderTable() {
@@ -35,18 +37,18 @@ function renderTable() {
   const rows = logsCache.filter(row =>
     !search ||
     (row.email || '').toLowerCase().includes(search) ||
-    (row.business_name || '').toLowerCase().includes(search)
+    (row.businessName || '').toLowerCase().includes(search)
   );
 
   emptyState.hidden = rows.length > 0;
 
   tableBody.innerHTML = rows.map(row => `
     <tr>
-      <td>${fmtWhen(row.created_at)}</td>
-      <td>${row.business_name || '—'}</td>
-      <td>${row.email || '—'}${row.employee_name ? ` <small>(${row.employee_name})</small>` : ''}</td>
+      <td>${fmtWhen(row.createdAt)}</td>
+      <td>${row.businessName || '—'}</td>
+      <td>${row.email || '—'}${row.employeeName ? ` <small>(${row.employeeName})</small>` : ''}</td>
       <td>${row.role === 'employee' ? 'Employee' : 'Owner'}</td>
-      <td title="${(row.user_agent || '').replace(/"/g, '&quot;')}">${fmtDevice(row.user_agent)}</td>
+      <td title="${(row.userAgent || '').replace(/"/g, '&quot;')}">${fmtDevice(row.userAgent)}</td>
       <td>${fmtLocation(row)}</td>
     </tr>
   `).join('');
@@ -57,13 +59,9 @@ async function loadSessionLogs({ force = false } = {}) {
   errorEl.hidden = true;
   refreshBtn.disabled = true;
   try {
-    const { data, error } = await supabase
-      .from('session_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(500);
-    if (error) throw error;
-    logsCache = data || [];
+    const q = query(collection(db, 'sessionLogs'), orderBy('createdAt', 'desc'), limit(500));
+    const snap = await getDocs(q);
+    logsCache = snap.docs.map(d => d.data());
     logsLoaded = true;
     renderTable();
   } catch (err) {

@@ -1,4 +1,4 @@
-const { getAuthenticatedUser } = require('./_supabaseAdmin');
+const { getAuthenticatedUser } = require('./_firebaseAdmin');
 const { amountForDays } = require('./_dayPackages');
 
 module.exports = async function handler(req, res) {
@@ -35,7 +35,7 @@ module.exports = async function handler(req, res) {
         currency: 'KES',
         channels: ['card', 'mobile_money'],
         callback_url: `${appUrl}/?checkout=complete`,
-        metadata: { supabase_user_id: user.id, days }
+        metadata: { firebase_user_id: user.uid, days }
       })
     });
 

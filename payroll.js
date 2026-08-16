@@ -1,6 +1,9 @@
-import { supabase, callFunction } from './auth.js';
+import { auth, db, callFunction } from './auth.js';
 import { requireReportPasscode } from './reportPasscode.js';
 import { applyPrintWatermark } from './watermark.js';
+import {
+  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where, orderBy
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 const { earningComponents, classificationLabels, toNumber, money, rawMoney, computePayroll } = window.PayrollShared;
 
@@ -9,6 +12,13 @@ const { earningComponents, classificationLabels, toNumber, money, rawMoney, comp
 // shared, page-agnostic #payslipPrintWrap DOM and needs no owner-only
 // state) instead of duplicating the payslip-breakdown math.
 export { printPayslip };
+
+function businessDoc(...pathSegments) {
+  return doc(db, 'businesses', auth.currentUser.uid, ...pathSegments);
+}
+function businessCollection(...pathSegments) {
+  return collection(db, 'businesses', auth.currentUser.uid, ...pathSegments);
+}
 
 const listView = document.getElementById('payrollListView');
 const newView = document.getElementById('payrollNewView');
@@ -60,37 +70,37 @@ let employeesCache = [];
 
 function settingsFromRow(row) {
   return {
-    nssfRate: row.nssf_rate,
-    nssfUpperLimit: row.nssf_upper_limit,
-    shifRate: row.shif_rate,
-    shifMinimum: row.shif_minimum,
-    ahlEmployeeRate: row.ahl_employee_rate,
-    ahlEmployerRate: row.ahl_employer_rate,
-    personalRelief: row.personal_relief,
-    nitaLevy: row.nita_levy,
-    insuranceReliefCap: row.insurance_relief_cap,
-    telephoneThreshold: row.telephone_threshold,
-    mealsThreshold: row.meals_threshold,
-    allowableDeductionCap: row.allowable_deduction_cap,
-    perDiemThreshold: row.per_diem_threshold,
-    daysInMonth: row.days_in_month,
-    secondaryFlatRate: row.secondary_flat_rate,
-    contractorWhtRate: row.contractor_wht_rate,
-    pwdExemption: row.pwd_exemption,
-    businessName: row.business_name
+    nssfRate: row.nssfRate,
+    nssfUpperLimit: row.nssfUpperLimit,
+    shifRate: row.shifRate,
+    shifMinimum: row.shifMinimum,
+    ahlEmployeeRate: row.ahlEmployeeRate,
+    ahlEmployerRate: row.ahlEmployerRate,
+    personalRelief: row.personalRelief,
+    nitaLevy: row.nitaLevy,
+    insuranceReliefCap: row.insuranceReliefCap,
+    telephoneThreshold: row.telephoneThreshold,
+    mealsThreshold: row.mealsThreshold,
+    allowableDeductionCap: row.allowableDeductionCap,
+    perDiemThreshold: row.perDiemThreshold,
+    daysInMonth: row.daysInMonth,
+    secondaryFlatRate: row.secondaryFlatRate,
+    contractorWhtRate: row.contractorWhtRate,
+    pwdExemption: row.pwdExemption,
+    businessName: row.businessName
   };
 }
 
-// A component with no dated employee_compensation_items entries at all
+// A component with no dated employeeCompensationItems entries at all
 // keeps using the flat employees.compensation value, unchanged — dated
 // entries only take over (summed, for whichever ones overlap the pay
 // period) once at least one exists for that employee + component, so
 // employees nobody has migrated to dated entries are unaffected.
 function resolveComponentAmount(items, employeeId, componentKey, periodStart, periodEnd, legacyAmount) {
-  const matches = items.filter(i => i.employee_id === employeeId && i.component_key === componentKey);
+  const matches = items.filter(i => i.employeeId === employeeId && i.componentKey === componentKey);
   if (!matches.length) return legacyAmount;
   return matches
-    .filter(i => i.start_date <= periodEnd && (!i.end_date || i.end_date >= periodStart))
+    .filter(i => i.startDate <= periodEnd && (!i.endDate || i.endDate >= periodStart))
     .reduce((sum, i) => sum + toNumber(i.amount), 0);
 }
 
@@ -110,7 +120,7 @@ function valuesFromEmployee(employee, compensationItems = [], periodStart, perio
 }
 
 function togglesFromEmployee(employee) {
-  const stored = employee.statutory_toggles || {};
+  const stored = employee.statutoryToggles || {};
   const toggles = {};
   earningComponents.forEach(item => {
     const saved = stored[item.id] || {};
@@ -120,49 +130,50 @@ function togglesFromEmployee(employee) {
 }
 
 async function loadRunSettings() {
-  const { data: settingsRow } = await supabase.from('payroll_settings').select('*').maybeSingle();
-  return settingsFromRow(settingsRow || {
-    nssf_rate: 6, nssf_upper_limit: 108000, shif_rate: 2.75, shif_minimum: 300,
-    ahl_employee_rate: 1.5, ahl_employer_rate: 1.5, personal_relief: 2400, nita_levy: 50,
-    insurance_relief_cap: 5000, telephone_threshold: 5000, meals_threshold: 5000,
-    allowable_deduction_cap: 30000, per_diem_threshold: 10000, days_in_month: 30,
-    secondary_flat_rate: 35, contractor_wht_rate: 5, pwd_exemption: 150000
+  const snap = await getDoc(businessDoc('settings', 'main'));
+  return settingsFromRow(snap.exists() ? snap.data() : {
+    nssfRate: 6, nssfUpperLimit: 108000, shifRate: 2.75, shifMinimum: 300,
+    ahlEmployeeRate: 1.5, ahlEmployerRate: 1.5, personalRelief: 2400, nitaLevy: 50,
+    insuranceReliefCap: 5000, telephoneThreshold: 5000, mealsThreshold: 5000,
+    allowableDeductionCap: 30000, perDiemThreshold: 10000, daysInMonth: 30,
+    secondaryFlatRate: 35, contractorWhtRate: 5, pwdExemption: 150000
   });
 }
 
-function computePayslipRow({ runId, userId, employee, isFinalDues, settings, compensationItems, periodStart, periodEnd }) {
+function computePayslipRow({ runId, employee, isFinalDues, settings, compensationItems, periodStart, periodEnd }) {
   const values = valuesFromEmployee(employee, compensationItems, periodStart, periodEnd);
   const toggles = togglesFromEmployee(employee);
-  const results = computePayroll({ classification: employee.employee_type, basicPay: values.basicPay, values, toggles, settings });
+  const results = computePayroll({ classification: employee.employeeType, basicPay: values.basicPay, values, toggles, settings });
 
   return {
-    payroll_run_id: runId,
-    employee_id: employee.id,
-    user_id: userId,
-    employee_snapshot: {
-      first_name: employee.first_name, last_name: employee.last_name,
-      job_position: employee.job_position, department: employee.department,
-      employee_type: employee.employee_type, employee_number: employee.employee_number
+    payrollRunId: runId,
+    employeeId: employee.id,
+    employeeSnapshot: {
+      first_name: employee.firstName, last_name: employee.lastName,
+      job_position: employee.jobPosition, department: employee.department,
+      employee_type: employee.employeeType, employee_number: employee.employeeNumber
     },
-    compensation_snapshot: { ...values, toggles },
+    compensationSnapshot: { ...values, toggles },
     results,
-    is_final_dues: isFinalDues
+    isFinalDues,
+    createdAt: new Date().toISOString()
   };
 }
 
-// Two payroll runs for the same user cannot share a period label, and their
-// date ranges cannot overlap at all (not just match exactly) -- an
-// employee's pay would otherwise land in two runs at once. excludeRunId
-// lets an edit-in-place check against every *other* run without
-// conflicting with itself.
+// Two payroll runs for the same business cannot share a period label,
+// and their date ranges cannot overlap at all (not just match exactly)
+// -- an employee's pay would otherwise land in two runs at once.
+// excludeRunId lets an edit-in-place check against every *other* run
+// without conflicting with itself.
 async function findConflictingRun({ periodStart, periodEnd, periodLabel, excludeRunId }) {
-  const { data: runs } = await supabase.from('payroll_runs').select('id, period_label, period_start, period_end');
+  const snap = await getDocs(businessCollection('payrollRuns'));
+  const runs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   const normalizedLabel = periodLabel.trim().toLowerCase();
-  return (runs || []).find(run => {
+  return runs.find(run => {
     if (run.id === excludeRunId) return false;
-    if (run.period_label.trim().toLowerCase() === normalizedLabel) return true;
+    if (run.periodLabel.trim().toLowerCase() === normalizedLabel) return true;
     // Two [start, end] ranges overlap unless one ends before the other starts.
-    if (periodStart <= run.period_end && run.period_start <= periodEnd) return true;
+    if (periodStart <= run.periodEnd && run.periodStart <= periodEnd) return true;
     return false;
   });
 }
@@ -176,41 +187,38 @@ function showListView() {
 
 async function loadPayrollRuns() {
   payrollRunsLoaded = true;
-  const { data: runs, error } = await supabase
-    .from('payroll_runs')
-    .select('*')
-    .order('created_at', { ascending: false });
+  try {
+    const snap = await getDocs(query(businessCollection('payrollRuns'), orderBy('createdAt', 'desc')));
+    const runs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  if (error || !runs) {
+    payrollRunsEmptyState.hidden = runs.length > 0;
+    payrollRunsEmptyState.textContent = 'No payroll runs yet.';
+
+    const rows = await Promise.all(runs.map(async run => {
+      const payslipsSnap = await getDocs(query(businessCollection('payslips'), where('payrollRunId', '==', run.id)));
+      const payslips = payslipsSnap.docs.map(d => d.data());
+      const totalNet = payslips.reduce((sum, p) => sum + (p.results?.netPay || 0), 0);
+      return `
+        <tr data-id="${run.id}">
+          <td>${run.periodLabel}</td>
+          <td><span class="status-pill status-${run.status === 'processed' ? 'active' : 'terminated'}">${run.status}</span></td>
+          <td>${payslips.length}</td>
+          <td>${money(totalNet)}</td>
+          <td><button type="button" class="ghost-button payroll-run-open-btn" data-id="${run.id}">Open</button></td>
+        </tr>
+      `;
+    }));
+    payrollRunsTableBody.innerHTML = rows.join('');
+  } catch {
     payrollRunsTableBody.innerHTML = '';
     payrollRunsEmptyState.hidden = false;
     payrollRunsEmptyState.textContent = 'Could not load payroll runs.';
-    return;
   }
-
-  payrollRunsEmptyState.hidden = runs.length > 0;
-  payrollRunsEmptyState.textContent = 'No payroll runs yet.';
-
-  const rows = await Promise.all(runs.map(async run => {
-    const { count } = await supabase.from('payslips').select('id', { count: 'exact', head: true }).eq('payroll_run_id', run.id);
-    const { data: payslips } = await supabase.from('payslips').select('results').eq('payroll_run_id', run.id);
-    const totalNet = (payslips || []).reduce((sum, p) => sum + (p.results?.netPay || 0), 0);
-    return `
-      <tr data-id="${run.id}">
-        <td>${run.period_label}</td>
-        <td><span class="status-pill status-${run.status === 'processed' ? 'active' : 'terminated'}">${run.status}</span></td>
-        <td>${count ?? 0}</td>
-        <td>${money(totalNet)}</td>
-        <td><button type="button" class="ghost-button payroll-run-open-btn" data-id="${run.id}">Open</button></td>
-      </tr>
-    `;
-  }));
-  payrollRunsTableBody.innerHTML = rows.join('');
 }
 
 async function syncEmployees() {
-  const { data: employees } = await supabase.from('employees').select('*').order('first_name');
-  employeesCache = employees || [];
+  const snap = await getDocs(query(businessCollection('employees'), orderBy('firstName')));
+  employeesCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   renderEligibilityLists();
 }
 
@@ -270,12 +278,12 @@ function renderEligibilityLists() {
       terminated.push(emp);
       return;
     }
-    if (!emp.contract_start_date) {
+    if (!emp.contractStartDate) {
       excluded.push({ emp, reason: 'No contract start date on file' });
       return;
     }
-    if (periodEnd && emp.contract_start_date > periodEnd) {
-      excluded.push({ emp, reason: `Contract starts ${emp.contract_start_date}, after this period` });
+    if (periodEnd && emp.contractStartDate > periodEnd) {
+      excluded.push({ emp, reason: `Contract starts ${emp.contractStartDate}, after this period` });
       return;
     }
     eligible.push(emp);
@@ -285,8 +293,8 @@ function renderEligibilityLists() {
     ? eligible.map(emp => `
         <label class="payroll-employee-row">
           <input type="checkbox" data-employee-id="${emp.id}" checked />
-          <span class="employee-name">${emp.first_name} ${emp.last_name}</span>
-          <span class="employee-reason">${classificationLabels[emp.employee_type] || emp.employee_type}</span>
+          <span class="employee-name">${emp.firstName} ${emp.lastName}</span>
+          <span class="employee-reason">${classificationLabels[emp.employeeType] || emp.employeeType}</span>
         </label>
       `).join('')
     : '<p class="hint">No eligible employees.</p>';
@@ -295,8 +303,8 @@ function renderEligibilityLists() {
     ? terminated.map(emp => `
         <label class="payroll-employee-row">
           <input type="checkbox" data-employee-id="${emp.id}" data-final-dues="true" />
-          <span class="employee-name">${emp.first_name} ${emp.last_name}</span>
-          <span class="employee-reason">Terminated ${emp.termination_date || ''}</span>
+          <span class="employee-name">${emp.firstName} ${emp.lastName}</span>
+          <span class="employee-reason">Terminated ${emp.terminationDate || ''}</span>
         </label>
       `).join('')
     : '<p class="hint">No terminated employees.</p>';
@@ -304,7 +312,7 @@ function renderEligibilityLists() {
   payrollExcludedList.innerHTML = excluded.length
     ? excluded.map(({ emp, reason }) => `
         <div class="payroll-employee-row is-excluded">
-          <span class="employee-name">${emp.first_name} ${emp.last_name}</span>
+          <span class="employee-name">${emp.firstName} ${emp.lastName}</span>
           <span class="employee-reason">${reason}</span>
         </div>
       `).join('')
@@ -350,61 +358,59 @@ createPayrollRunBtn.addEventListener('click', async () => {
     excludeRunId: editingRunId
   });
   if (conflict) {
-    const isLabelClash = conflict.period_label.trim().toLowerCase() === periodLabel.trim().toLowerCase();
+    const isLabelClash = conflict.periodLabel.trim().toLowerCase() === periodLabel.trim().toLowerCase();
     payrollNewError.textContent = isLabelClash
-      ? `Another payroll run already uses the label "${conflict.period_label}".`
-      : `This period overlaps with an existing run ("${conflict.period_label}", ${conflict.period_start} to ${conflict.period_end}).`;
+      ? `Another payroll run already uses the label "${conflict.periodLabel}".`
+      : `This period overlaps with an existing run ("${conflict.periodLabel}", ${conflict.periodStart} to ${conflict.periodEnd}).`;
     payrollNewError.hidden = false;
     return;
   }
 
   createPayrollRunBtn.disabled = true;
   try {
-    const { data: { user } } = await supabase.auth.getUser();
     const settings = await loadRunSettings();
 
     let runId = editingRunId;
     if (editingRunId) {
-      const { error: updateError } = await supabase.from('payroll_runs').update({
-        period_label: periodLabel,
-        period_start: payrollPeriodStart.value,
-        period_end: payrollPeriodEnd.value
-      }).eq('id', editingRunId);
-      if (updateError) throw updateError;
-
-      const { error: deleteError } = await supabase.from('payslips').delete().eq('payroll_run_id', editingRunId);
-      if (deleteError) throw deleteError;
+      await updateDoc(businessDoc('payrollRuns', editingRunId), {
+        periodLabel,
+        periodStart: payrollPeriodStart.value,
+        periodEnd: payrollPeriodEnd.value
+      });
+      const oldPayslipsSnap = await getDocs(query(businessCollection('payslips'), where('payrollRunId', '==', editingRunId)));
+      const deleteBatch = writeBatch(db);
+      oldPayslipsSnap.docs.forEach(d => deleteBatch.delete(d.ref));
+      await deleteBatch.commit();
     } else {
-      const { data: run, error: runError } = await supabase.from('payroll_runs').insert({
-        user_id: user.id,
-        period_label: periodLabel,
-        period_start: payrollPeriodStart.value,
-        period_end: payrollPeriodEnd.value,
-        status: 'draft'
-      }).select().single();
-      if (runError) throw runError;
-      runId = run.id;
+      const runRef = await addDoc(businessCollection('payrollRuns'), {
+        periodLabel,
+        periodStart: payrollPeriodStart.value,
+        periodEnd: payrollPeriodEnd.value,
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        approvedAt: null,
+        processedAt: null
+      });
+      runId = runRef.id;
     }
 
     const selectedEmployeeIds = selected.map(checkbox => checkbox.dataset.employeeId);
-    const { data: compensationItems, error: itemsError } = await supabase
-      .from('employee_compensation_items')
-      .select('*')
-      .in('employee_id', selectedEmployeeIds);
-    if (itemsError) throw itemsError;
+    const itemsSnap = await getDocs(businessCollection('employeeCompensationItems'));
+    const compensationItems = itemsSnap.docs.map(d => d.data()).filter(i => selectedEmployeeIds.includes(i.employeeId));
 
     const payslipRows = selected.map(checkbox => {
       const employee = employeesCache.find(e => e.id === checkbox.dataset.employeeId);
       const isFinalDues = checkbox.dataset.finalDues === 'true';
       return computePayslipRow({
-        runId, userId: user.id, employee, isFinalDues, settings,
-        compensationItems: compensationItems || [],
+        runId, employee, isFinalDues, settings,
+        compensationItems,
         periodStart: payrollPeriodStart.value, periodEnd: payrollPeriodEnd.value
       });
     });
 
-    const { error: payslipError } = await supabase.from('payslips').insert(payslipRows);
-    if (payslipError) throw payslipError;
+    const insertBatch = writeBatch(db);
+    payslipRows.forEach(row => insertBatch.set(doc(businessCollection('payslips')), row));
+    await insertBatch.commit();
 
     editingRunId = null;
     await openRun(runId);
@@ -424,18 +430,19 @@ async function openRun(runId) {
   newView.hidden = true;
   detailView.hidden = false;
 
-  const { data: run, error: runError } = await supabase.from('payroll_runs').select('*').eq('id', runId).single();
-  if (runError || !run) {
+  const runSnap = await getDoc(businessDoc('payrollRuns', runId));
+  if (!runSnap.exists()) {
     payrollDetailError.textContent = 'Could not load this payroll run.';
     payrollDetailError.hidden = false;
     return;
   }
+  const run = { id: runSnap.id, ...runSnap.data() };
 
-  const { data: payslips } = await supabase.from('payslips').select('*').eq('payroll_run_id', runId);
-  const rows = payslips || [];
+  const payslipsSnap = await getDocs(query(businessCollection('payslips'), where('payrollRunId', '==', runId)));
+  const rows = payslipsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  payrollDetailTitle.textContent = run.period_label;
-  payrollDetailStatus.textContent = `Status: ${run.status}${run.status === 'approved' ? ` — approved ${new Date(run.approved_at).toLocaleDateString()}` : ''}${run.status === 'processed' ? ` — processed ${new Date(run.processed_at).toLocaleDateString()}` : ''}`;
+  payrollDetailTitle.textContent = run.periodLabel;
+  payrollDetailStatus.textContent = `Status: ${run.status}${run.status === 'approved' ? ` — approved ${new Date(run.approvedAt).toLocaleDateString()}` : ''}${run.status === 'processed' ? ` — processed ${new Date(run.processedAt).toLocaleDateString()}` : ''}`;
 
   const totals = rows.reduce((acc, p) => {
     acc.gross += p.results?.displayGross || 0;
@@ -453,9 +460,9 @@ async function openRun(runId) {
 
   payrollDetailTableBody.innerHTML = rows.map(p => `
     <tr class="payroll-detail-row" data-payslip-id="${p.id}">
-      <td>${p.employee_snapshot.employee_number || '—'}</td>
-      <td><svg class="row-expand-icon" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>${p.employee_snapshot.first_name} ${p.employee_snapshot.last_name}${p.is_final_dues ? ' <small>(final dues)</small>' : ''}</td>
-      <td>${classificationLabels[p.employee_snapshot.employee_type] || p.employee_snapshot.employee_type}</td>
+      <td>${p.employeeSnapshot.employee_number || '—'}</td>
+      <td><svg class="row-expand-icon" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>${p.employeeSnapshot.first_name} ${p.employeeSnapshot.last_name}${p.isFinalDues ? ' <small>(final dues)</small>' : ''}</td>
+      <td>${classificationLabels[p.employeeSnapshot.employee_type] || p.employeeSnapshot.employee_type}</td>
       <td>${money(p.results.displayGross)}</td>
       <td>${money(p.results.paye)}</td>
       <td>${money(p.results.netPay)}</td>
@@ -465,11 +472,11 @@ async function openRun(runId) {
       </td>
     </tr>
   `).join('');
-  payrollDetailTableBody.dataset.payslips = JSON.stringify(rows.map(p => ({ id: p.id, employee_snapshot: p.employee_snapshot, compensation_snapshot: p.compensation_snapshot, results: p.results, period_label: run.period_label })));
+  payrollDetailTableBody.dataset.payslips = JSON.stringify(rows.map(p => ({ id: p.id, employee_snapshot: p.employeeSnapshot, compensation_snapshot: p.compensationSnapshot, results: p.results, period_label: run.periodLabel })));
 
   currentRunStatus = run.status;
-  currentRunMeta = run;
-  currentRunPayslips = rows;
+  currentRunMeta = { ...run, period_label: run.periodLabel, period_start: run.periodStart, period_end: run.periodEnd };
+  currentRunPayslips = rows.map(p => ({ ...p, employee_snapshot: p.employeeSnapshot, compensation_snapshot: p.compensationSnapshot, is_final_dues: p.isFinalDues }));
   approveRunBtn.hidden = run.status !== 'draft';
   processRunBtn.hidden = run.status !== 'approved';
   recalcRunBtn.hidden = run.status !== 'draft';
@@ -485,34 +492,39 @@ async function openRun(runId) {
 // When an active payroll approval workflow exists, the owner's direct
 // Approve button is replaced by "Submit for approval" + a status line --
 // approval power moves entirely to the appointed approvers (see
-// record_approval_decision() in the approval-workflows migration). With
-// no active workflow, approveRunBtn's own draft-only visibility above is
-// left completely alone.
+// api/record-approval-decision.js). With no active workflow,
+// approveRunBtn's own draft-only visibility above is left completely
+// alone.
 async function applyApprovalWorkflowUi(run) {
   submitForApprovalBtn.hidden = true;
   payrollAwaitingApproval.hidden = true;
   if (run.status !== 'draft') return;
 
-  const { data: workflow } = await supabase.from('approval_workflows').select('id').eq('action_type', 'payroll_run').eq('is_active', true).maybeSingle();
-  if (!workflow) return;
+  const workflowSnap = await getDoc(businessDoc('approvalWorkflows', 'payroll_run'));
+  if (!workflowSnap.exists() || !workflowSnap.data().isActive) return;
 
   approveRunBtn.hidden = true;
 
-  const { data: actions } = await supabase.from('approval_actions').select('*').eq('action_type', 'payroll_run').eq('record_id', run.id);
-  if (!actions || !actions.length) {
+  const actionsSnap = await getDocs(query(
+    businessCollection('approvalActions'),
+    where('actionType', '==', 'payroll_run'),
+    where('recordId', '==', run.id)
+  ));
+  const actions = actionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (!actions.length) {
     submitForApprovalBtn.hidden = false;
     return;
   }
 
-  const employeeIds = [...new Set(actions.map(a => a.employee_id))];
-  const { data: approverEmployees } = await supabase.from('employees').select('id, first_name, last_name').in('id', employeeIds);
-  const nameById = new Map((approverEmployees || []).map(e => [e.id, `${e.first_name} ${e.last_name}`]));
+  const employeeIds = [...new Set(actions.map(a => a.employeeId))];
+  const approverSnaps = await Promise.all(employeeIds.map(id => getDoc(businessDoc('employees', id))));
+  const nameById = new Map(approverSnaps.filter(s => s.exists()).map(s => [s.id, `${s.data().firstName} ${s.data().lastName}`]));
 
   const rejected = actions.find(a => a.decision === 'rejected');
-  const pending = actions.filter(a => a.decision === 'pending').map(a => nameById.get(a.employee_id) || 'Unknown');
+  const pending = actions.filter(a => a.decision === 'pending').map(a => nameById.get(a.employeeId) || 'Unknown');
 
   if (rejected) {
-    payrollAwaitingApproval.textContent = `Rejected by ${nameById.get(rejected.employee_id) || 'an approver'}${rejected.comment ? `: "${rejected.comment}"` : ''}. Edit and resubmit.`;
+    payrollAwaitingApproval.textContent = `Rejected by ${nameById.get(rejected.employeeId) || 'an approver'}${rejected.comment ? `: "${rejected.comment}"` : ''}. Edit and resubmit.`;
     submitForApprovalBtn.hidden = false;
   } else if (pending.length) {
     payrollAwaitingApproval.textContent = `Awaiting approval from: ${pending.join(', ')}.`;
@@ -527,8 +539,7 @@ submitForApprovalBtn.addEventListener('click', async () => {
   submitForApprovalBtn.disabled = true;
   payrollDetailError.hidden = true;
   try {
-    const { error } = await supabase.rpc('submit_for_approval', { p_action_type: 'payroll_run', p_record_id: currentRunId });
-    if (error) throw error;
+    await callFunction('/api/submit-for-approval', { actionType: 'payroll_run', recordId: currentRunId });
     await openRun(currentRunId);
   } catch (err) {
     payrollDetailError.textContent = err.message || 'Could not submit this run for approval.';
@@ -547,9 +558,10 @@ payrollDetailBackBtn.addEventListener('click', showListView);
 
 approveRunBtn.addEventListener('click', async () => {
   if (!currentRunId) return;
-  const { error } = await supabase.from('payroll_runs').update({ status: 'approved', approved_at: new Date().toISOString() }).eq('id', currentRunId);
-  if (error) {
-    payrollDetailError.textContent = error.message;
+  try {
+    await updateDoc(businessDoc('payrollRuns', currentRunId), { status: 'approved', approvedAt: new Date().toISOString() });
+  } catch (err) {
+    payrollDetailError.textContent = err.message;
     payrollDetailError.hidden = false;
     return;
   }
@@ -558,9 +570,10 @@ approveRunBtn.addEventListener('click', async () => {
 
 processRunBtn.addEventListener('click', async () => {
   if (!currentRunId) return;
-  const { error } = await supabase.from('payroll_runs').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('id', currentRunId);
-  if (error) {
-    payrollDetailError.textContent = error.message;
+  try {
+    await updateDoc(businessDoc('payrollRuns', currentRunId), { status: 'processed', processedAt: new Date().toISOString() });
+  } catch (err) {
+    payrollDetailError.textContent = err.message;
     payrollDetailError.hidden = false;
     return;
   }
@@ -570,11 +583,12 @@ processRunBtn.addEventListener('click', async () => {
 recallRunBtn.addEventListener('click', async () => {
   if (!currentRunId) return;
   const patch = currentRunStatus === 'processed'
-    ? { status: 'approved', processed_at: null }
-    : { status: 'draft', approved_at: null };
-  const { error } = await supabase.from('payroll_runs').update(patch).eq('id', currentRunId);
-  if (error) {
-    payrollDetailError.textContent = error.message;
+    ? { status: 'approved', processedAt: null }
+    : { status: 'draft', approvedAt: null };
+  try {
+    await updateDoc(businessDoc('payrollRuns', currentRunId), patch);
+  } catch (err) {
+    payrollDetailError.textContent = err.message;
     payrollDetailError.hidden = false;
     return;
   }
@@ -586,36 +600,31 @@ recalcRunBtn.addEventListener('click', async () => {
   recalcRunBtn.disabled = true;
   payrollDetailError.hidden = true;
   try {
-    const { data: payslips, error: payslipsError } = await supabase.from('payslips').select('*').eq('payroll_run_id', currentRunId);
-    if (payslipsError) throw payslipsError;
+    const payslipsSnap = await getDocs(query(businessCollection('payslips'), where('payrollRunId', '==', currentRunId)));
+    const payslips = payslipsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    const employeeIds = [...new Set((payslips || []).map(p => p.employee_id).filter(Boolean))];
-    const { data: freshEmployees, error: employeesError } = await supabase.from('employees').select('*').in('id', employeeIds);
-    if (employeesError) throw employeesError;
-    const employeeById = new Map((freshEmployees || []).map(e => [e.id, e]));
+    const employeeIds = [...new Set(payslips.map(p => p.employeeId).filter(Boolean))];
+    const employeeSnaps = await Promise.all(employeeIds.map(id => getDoc(businessDoc('employees', id))));
+    const employeeById = new Map(employeeSnaps.filter(s => s.exists()).map(s => [s.id, { id: s.id, ...s.data() }]));
 
-    const { data: compensationItems, error: itemsError } = await supabase
-      .from('employee_compensation_items')
-      .select('*')
-      .in('employee_id', employeeIds);
-    if (itemsError) throw itemsError;
+    const itemsSnap = await getDocs(businessCollection('employeeCompensationItems'));
+    const compensationItems = itemsSnap.docs.map(d => d.data()).filter(i => employeeIds.includes(i.employeeId));
 
     const settings = await loadRunSettings();
 
-    for (const payslip of payslips || []) {
-      const employee = employeeById.get(payslip.employee_id);
+    for (const payslip of payslips) {
+      const employee = employeeById.get(payslip.employeeId);
       if (!employee) continue;
       const row = computePayslipRow({
-        runId: currentRunId, userId: payslip.user_id, employee, isFinalDues: payslip.is_final_dues, settings,
-        compensationItems: compensationItems || [],
+        runId: currentRunId, employee, isFinalDues: payslip.isFinalDues, settings,
+        compensationItems,
         periodStart: currentRunMeta?.period_start, periodEnd: currentRunMeta?.period_end
       });
-      const { error: updateError } = await supabase.from('payslips').update({
-        employee_snapshot: row.employee_snapshot,
-        compensation_snapshot: row.compensation_snapshot,
+      await updateDoc(businessDoc('payslips', payslip.id), {
+        employeeSnapshot: row.employeeSnapshot,
+        compensationSnapshot: row.compensationSnapshot,
         results: row.results
-      }).eq('id', payslip.id);
-      if (updateError) throw updateError;
+      });
     }
 
     await openRun(currentRunId);
@@ -628,7 +637,7 @@ recalcRunBtn.addEventListener('click', async () => {
 });
 
 // Unlike "Sync payroll" (draft-only, recomputes pay), this only refreshes
-// employee_snapshot.employee_number -- never compensation_snapshot/results
+// employeeSnapshot.employee_number -- never compensationSnapshot/results
 // -- so it's safe to run on approved/processed runs without reopening the
 // locked financial figures to recomputation.
 syncEmployeeNumbersBtn.addEventListener('click', async () => {
@@ -637,35 +646,31 @@ syncEmployeeNumbersBtn.addEventListener('click', async () => {
   payrollDetailError.hidden = true;
   payrollDetailInfo.hidden = true;
   try {
-    const { data: payslips, error: payslipsError } = await supabase.from('payslips').select('*').eq('payroll_run_id', currentRunId);
-    if (payslipsError) throw payslipsError;
+    const payslipsSnap = await getDocs(query(businessCollection('payslips'), where('payrollRunId', '==', currentRunId)));
+    const payslips = payslipsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    const employeeIds = [...new Set((payslips || []).map(p => p.employee_id).filter(Boolean))];
-    const { data: freshEmployees, error: employeesError } = await supabase.from('employees').select('id, employee_number').in('id', employeeIds);
-    if (employeesError) throw employeesError;
-    const employeeById = new Map((freshEmployees || []).map(e => [e.id, e]));
+    const employeeIds = [...new Set(payslips.map(p => p.employeeId).filter(Boolean))];
+    const employeeSnaps = await Promise.all(employeeIds.map(id => getDoc(businessDoc('employees', id))));
+    const employeeById = new Map(employeeSnaps.filter(s => s.exists()).map(s => [s.id, { id: s.id, ...s.data() }]));
 
     // Employees added before the numbering feature (or never manually
     // backfilled via Employees > Assign missing numbers) can still have
-    // employee_number = null -- assign one now instead of requiring a
+    // employeeNumber = null -- assign one now instead of requiring a
     // separate trip there first.
     for (const employee of employeeById.values()) {
-      if (employee.employee_number) continue;
-      const { data: employeeNumber, error: numberError } = await supabase.rpc('next_employee_number');
-      if (numberError) throw numberError;
-      const { error: updateEmpError } = await supabase.from('employees').update({ employee_number: employeeNumber }).eq('id', employee.id);
-      if (updateEmpError) throw updateEmpError;
-      employee.employee_number = employeeNumber;
+      if (employee.employeeNumber) continue;
+      const { employeeNumber } = await callFunction('/api/next-employee-number');
+      await updateDoc(businessDoc('employees', employee.id), { employeeNumber });
+      employee.employeeNumber = employeeNumber;
     }
 
     let synced = 0;
-    for (const payslip of payslips || []) {
-      const employee = employeeById.get(payslip.employee_id);
-      if (!employee || payslip.employee_snapshot?.employee_number === employee.employee_number) continue;
-      const { error: updateError } = await supabase.from('payslips').update({
-        employee_snapshot: { ...payslip.employee_snapshot, employee_number: employee.employee_number }
-      }).eq('id', payslip.id);
-      if (updateError) throw updateError;
+    for (const payslip of payslips) {
+      const employee = employeeById.get(payslip.employeeId);
+      if (!employee || payslip.employeeSnapshot?.employee_number === employee.employeeNumber) continue;
+      await updateDoc(businessDoc('payslips', payslip.id), {
+        employeeSnapshot: { ...payslip.employeeSnapshot, employee_number: employee.employeeNumber }
+      });
       synced += 1;
     }
 
@@ -686,25 +691,26 @@ editRunBtn.addEventListener('click', async () => {
   if (!currentRunId) return;
   editRunBtn.disabled = true;
   try {
-    const { data: run, error: runError } = await supabase.from('payroll_runs').select('*').eq('id', currentRunId).single();
-    if (runError || !run) throw runError || new Error('Could not load this payroll run.');
-    const { data: payslips, error: payslipsError } = await supabase.from('payslips').select('employee_id, is_final_dues').eq('payroll_run_id', currentRunId);
-    if (payslipsError) throw payslipsError;
+    const runSnap = await getDoc(businessDoc('payrollRuns', currentRunId));
+    if (!runSnap.exists()) throw new Error('Could not load this payroll run.');
+    const run = { id: runSnap.id, ...runSnap.data() };
+    const payslipsSnap = await getDocs(query(businessCollection('payslips'), where('payrollRunId', '==', currentRunId)));
+    const payslips = payslipsSnap.docs.map(d => d.data());
 
     editingRunId = run.id;
-    payrollNewTitle.textContent = `Edit ${run.period_label}`;
+    payrollNewTitle.textContent = `Edit ${run.periodLabel}`;
     createPayrollRunBtnText.textContent = 'Save changes';
     payrollNewError.hidden = true;
-    payrollPeriodLabel.value = run.period_label;
-    payrollPeriodStart.value = run.period_start;
-    payrollPeriodEnd.value = run.period_end;
+    payrollPeriodLabel.value = run.periodLabel;
+    payrollPeriodStart.value = run.periodStart;
+    payrollPeriodEnd.value = run.periodEnd;
     listView.hidden = true;
     detailView.hidden = true;
     newView.hidden = false;
 
     await syncEmployees();
 
-    const selectedIds = new Set((payslips || []).map(p => p.employee_id));
+    const selectedIds = new Set(payslips.map(p => p.employeeId));
     [...payrollEligibleList.querySelectorAll('input[type="checkbox"]'), ...payrollTerminatedList.querySelectorAll('input[type="checkbox"]')]
       .forEach(checkbox => { checkbox.checked = selectedIds.has(checkbox.dataset.employeeId); });
   } catch (err) {
@@ -822,13 +828,14 @@ function populatePayslipFields(payslip, prefix) {
 async function populatePayslipPrintView(payslip) {
   populatePayslipFields(payslip, 'payslipPrint');
 
-  const { data: settingsRow } = await supabase.from('payroll_settings').select('business_name, business_logo_url').maybeSingle();
+  const settingsSnap = await getDoc(businessDoc('settings', 'main'));
+  const settings = settingsSnap.exists() ? settingsSnap.data() : {};
   const logoEl = document.getElementById('payslipPrintLogo');
   const businessNameEl = document.getElementById('payslipPrintBusinessName');
-  logoEl.src = settingsRow?.business_logo_url || '';
-  logoEl.hidden = !settingsRow?.business_logo_url;
-  businessNameEl.textContent = settingsRow?.business_name || '';
-  businessNameEl.hidden = !settingsRow?.business_name;
+  logoEl.src = settings.businessLogoUrl || '';
+  logoEl.hidden = !settings.businessLogoUrl;
+  businessNameEl.textContent = settings.businessName || '';
+  businessNameEl.hidden = !settings.businessName;
 
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -1156,10 +1163,11 @@ async function printMusterRoll() {
   musterRollBtn.disabled = true;
   payrollDetailError.hidden = true;
   try {
-    const { data: settingsRow } = await supabase.from('payroll_settings').select('business_name, business_logo_url').maybeSingle();
+    const settingsSnap = await getDoc(businessDoc('settings', 'main'));
+    const settings = settingsSnap.exists() ? settingsSnap.data() : {};
 
     const wrap = document.getElementById('musterRollPrintWrap');
-    wrap.innerHTML = buildMusterRollHtml(currentRunMeta, currentRunPayslips, { businessName: settingsRow?.business_name, logoUrl: settingsRow?.business_logo_url });
+    wrap.innerHTML = buildMusterRollHtml(currentRunMeta, currentRunPayslips, { businessName: settings.businessName, logoUrl: settings.businessLogoUrl });
     applyPrintWatermark(wrap);
 
     // @page size is a page-level rule, not scopable by a body class, so
@@ -1204,9 +1212,10 @@ async function emailMusterRoll() {
   payrollDetailError.hidden = true;
   payrollDetailInfo.hidden = true;
   try {
-    const { data: settingsRow } = await supabase.from('payroll_settings').select('business_name, business_logo_url').maybeSingle();
+    const settingsSnap = await getDoc(businessDoc('settings', 'main'));
+    const settings = settingsSnap.exists() ? settingsSnap.data() : {};
     const container = document.createElement('div');
-    container.innerHTML = buildMusterRollHtml(currentRunMeta, currentRunPayslips, { businessName: settingsRow?.business_name, logoUrl: settingsRow?.business_logo_url });
+    container.innerHTML = buildMusterRollHtml(currentRunMeta, currentRunPayslips, { businessName: settings.businessName, logoUrl: settings.businessLogoUrl });
     applyPrintWatermark(container);
     await callFunction('/api/email-report', { subject: `Muster roll — ${currentRunMeta.period_label}`, html: container.innerHTML });
     payrollDetailInfo.textContent = 'Muster roll emailed to your registered email address.';

@@ -1,36 +1,55 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import {
+  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
+  onAuthStateChanged, sendPasswordResetEmail, confirmPasswordReset
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+import {
+  getFirestore, doc, getDoc, setDoc, addDoc, collection
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { showScreenWatermark, hideScreenWatermark } from './watermark.js';
 
-// Public by design — Row Level Security on the `profiles` table is what
-// actually restricts access, not secrecy of these values.
-const SUPABASE_URL = 'https://puxsrbukdsywxuaxeeom.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_40HuQHNxiEA06Aw26di1BQ_C1oK6RU1';
+// Public by design -- same as the Supabase URL/anon key were: Firestore
+// Security Rules (firestore.rules) and Storage rules (storage.rules) are
+// what actually restrict access, not secrecy of a client config object.
+// Fill these in from Firebase console -> Project settings -> General ->
+// Your apps -> SDK setup and configuration.
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBT2JqlR2fzsSuCsi3jqrmUgkJHataOo6Y",
+  authDomain: "softhr-23bea.firebaseapp.com",
+  projectId: "softhr-23bea",
+  storageBucket: "softhr-23bea.firebasestorage.app",
+  messagingSenderId: "970112321647",
+  appId: "1:970112321647:web:4bf2eaa28a8b9d5030659a",
+  measurementId: "G-YVZSN1J3T9"
+};
 
-if (SUPABASE_URL.startsWith('YOUR_') || SUPABASE_ANON_KEY.startsWith('YOUR_')) {
+if (Object.values(FIREBASE_CONFIG).some(v => v.startsWith('YOUR_'))) {
   const authScreen = document.getElementById('authScreen');
   authScreen.hidden = false;
   authScreen.querySelector('h1').textContent = 'Setup required';
   authScreen.querySelector('.hero-copy').textContent =
-    'Add your Supabase project URL and anon key to auth.js (see README) before this app can be used.';
+    'Add your Firebase project config to auth.js (see README) before this app can be used.';
   authScreen.querySelector('.auth-form').hidden = true;
-  throw new Error('auth.js: SUPABASE_URL / SUPABASE_ANON_KEY not configured');
+  throw new Error('auth.js: FIREBASE_CONFIG not configured');
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const firebaseApp = initializeApp(FIREBASE_CONFIG);
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
 
-// Shared with employees.js so it reuses this exact client/session instead
-// of creating a second GoTrue client (which would fight over session storage).
-export { supabase, callFunction, TRIAL_DAYS, EXTENDED_TRIAL_EMAILS, getGeolocation };
+// Shared with every other client file so they reuse this exact
+// app/auth/db instance instead of each initializing their own.
+export { auth, db, callFunction, TRIAL_DAYS, EXTENDED_TRIAL_EMAILS, getGeolocation };
 
 const TRIAL_DAYS = 1;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Developer/support account(s) get a longer trial so day-to-day QA and
 // support work isn't gated behind buying day-passes. Keyed by email
-// (not is_admin) so it's a time-boxed trial extension, not permanent
-// unlimited access — once the listed number of days has elapsed since
-// trial_started_at, it behaves like anyone else's expired trial and
-// needs a day-pass same as normal.
+// (not isAdmin) so it's a time-boxed trial extension, not permanent
+// unlimited access -- once the listed number of days has elapsed since
+// trialStartedAt, it behaves like anyone else's expired trial and needs
+// a day-pass same as normal.
 const EXTENDED_TRIAL_EMAILS = { 'jamosammy@gmail.com': 60 };
 
 // Keep in sync with the authoritative price list in api/_dayPackages.js.
@@ -168,14 +187,23 @@ const adminPreviewDropdown = document.getElementById('adminPreviewDropdown');
 const adminPreviewBtn = document.getElementById('adminPreviewBtn');
 const adminPreviewMenu = document.getElementById('adminPreviewMenu');
 
-// Detected synchronously from the URL so recovery mode is set before
-// Supabase's async client init has a chance to race renderForSession() and
-// flash the calculator screen instead of the "set new password" form.
-// An invite link lands here the same way a password-recovery link does
-// (Supabase puts type=invite in the redirect hash) and needs the exact
-// same "set a password" step, so it's folded into the same flag/screen.
-let inRecovery = location.hash.includes('type=recovery') || location.hash.includes('type=invite');
-if (inRecovery) showScreen('recovery');
+// Firebase's password-reset flow is fundamentally different from
+// Supabase's: sendPasswordResetEmail() sends a link back to THIS app
+// (via the `url` option below) carrying ?mode=resetPassword&oobCode=...
+// in the query string -- never a signed-in session the way Supabase's
+// recovery link was. confirmPasswordReset(auth, oobCode, newPassword)
+// sets the password directly, with no sign-in step at all, which also
+// means it works identically for a brand-new admin-created employee
+// account with no password yet (see api/invite-employee.js) -- one
+// unified flow now covers both "forgot password" and "accept invite",
+// where Supabase needed to distinguish type=recovery from type=invite.
+const recoveryParams = new URLSearchParams(location.search);
+let inRecovery = recoveryParams.get('mode') === 'resetPassword' && !!recoveryParams.get('oobCode');
+const recoveryOobCode = recoveryParams.get('oobCode');
+if (inRecovery) {
+  showScreen('recovery');
+  history.replaceState(null, '', location.pathname);
+}
 
 // ---------------------------------------------------------------------
 // Idle auto-logout -- signs out any signed-in session (owner or
@@ -195,7 +223,7 @@ function resetIdleTimer() {
   if (!hasActiveSession) return;
   idleTimer = setTimeout(async () => {
     hasActiveSession = false;
-    await supabase.auth.signOut();
+    await signOut(auth);
     authInfo.textContent = 'You were signed out after 10 minutes of inactivity.';
     authInfo.hidden = false;
     renderForSession();
@@ -208,12 +236,12 @@ function resetIdleTimer() {
 
 // ---------------------------------------------------------------------
 // Cross-tenant login log, readable only by the platform admin (see
-// migrate_session_logs.sql). Best-effort and fire-and-forget: a logging
-// failure, a slow/declined geolocation prompt, or an offline browser
-// must never block or delay someone's actual login. Geolocation is
-// requested (never something a browser lets a site force) -- a denial
-// or an unsupported browser is just logged as such and login proceeds
-// exactly the same either way.
+// firestore.rules). Best-effort and fire-and-forget: a logging failure,
+// a slow/declined geolocation prompt, or an offline browser must never
+// block or delay someone's actual login. Geolocation is requested
+// (never something a browser lets a site force) -- a denial or an
+// unsupported browser is just logged as such and login proceeds exactly
+// the same either way.
 // ---------------------------------------------------------------------
 let sessionLoggedThisPageLoad = false;
 
@@ -231,28 +259,42 @@ function getGeolocation() {
   });
 }
 
-// cachedGeo lets logSessionOnce reuse the geolocation result the login
-// security gate below already fetched, instead of prompting/requesting
-// it a second time in the same login.
-async function logSessionOnce(profile, cachedGeo) {
+// Role/ownerUserId/employeeId all come straight off the ID token's
+// custom claims (set at signup/invite time by api/complete-signup.js /
+// api/invite-employee.js) -- no server round-trip needed to resolve
+// "who is this," unlike the old session_log_identity() RPC, which
+// existed only because an employee session had no RLS access to their
+// owner's profiles/payroll_settings row. Firestore Security Rules grant
+// an employee direct read access to their own business's settings doc
+// (see firestore.rules), so business_name is just a normal read here.
+async function logSessionOnce(profile, claims, cachedGeo) {
   if (sessionLoggedThisPageLoad) return;
   sessionLoggedThisPageLoad = true;
   try {
-    const [{ data: identityRows }, geo] = await Promise.all([
-      supabase.rpc('session_log_identity'),
+    const role = claims.role || 'owner';
+    const ownerUserId = claims.ownerUserId || profile.id;
+    const [settingsSnap, employeeSnap, geo] = await Promise.all([
+      getDoc(doc(db, 'businesses', ownerUserId, 'settings', 'main')),
+      role === 'employee' && claims.employeeId
+        ? getDoc(doc(db, 'businesses', ownerUserId, 'employees', claims.employeeId))
+        : Promise.resolve(null),
       cachedGeo ? Promise.resolve(cachedGeo) : getGeolocation()
     ]);
-    const identity = (identityRows && identityRows[0]) || {};
-    await supabase.from('session_logs').insert({
-      user_id: profile.id,
+    const businessName = settingsSnap.exists() ? (settingsSnap.data().businessName || null) : null;
+    const employeeData = employeeSnap && employeeSnap.exists() ? employeeSnap.data() : null;
+    const employeeName = employeeData ? `${employeeData.firstName} ${employeeData.lastName}` : null;
+
+    await addDoc(collection(db, 'sessionLogs'), {
+      userId: profile.id,
       email: profile.email || null,
-      role: identity.role || profile.role || 'owner',
-      business_name: identity.business_name || null,
-      employee_name: identity.employee_name || null,
-      user_agent: navigator.userAgent,
-      location_status: geo.status,
+      role,
+      businessName,
+      employeeName,
+      userAgent: navigator.userAgent,
+      locationStatus: geo.status,
       latitude: geo.latitude,
-      longitude: geo.longitude
+      longitude: geo.longitude,
+      createdAt: new Date().toISOString()
     });
   } catch {
     // Best-effort only.
@@ -261,13 +303,16 @@ async function logSessionOnce(profile, cachedGeo) {
 
 // ---------------------------------------------------------------------
 // Employee-only login time-window/geofence enforcement (see
-// migrate_login_security.sql). Runs before the OTP code is even sent --
-// no point emailing a code to someone who's about to be blocked anyway.
-// Never blocks the business owner's own login (enforced server-side in
-// check_login_security() -- see that migration for why: self-lockout
-// risk, since only the owner can reach Settings to turn this off).
-// Checked once per (user id, tab session), same lifecycle as the OTP
-// challenge below, not on every renderForSession() re-render.
+// api/check-login-security.js). Runs before the OTP code is even sent
+// -- no point emailing a code to someone who's about to be blocked
+// anyway. Never blocks the business owner's own login (enforced
+// server-side -- see that endpoint for why: self-lockout risk, since
+// only the owner can reach Settings to turn this off). Checked once per
+// (user id, tab session), same lifecycle as the OTP challenge below,
+// not on every renderForSession() re-render. Kept as a server call
+// (not a direct Firestore read) specifically for the time-window check,
+// which has to run against a clock the client can't spoof by changing
+// its system time.
 // ---------------------------------------------------------------------
 let securityCheckedUserId = null;
 let loginBlockedReason = null;
@@ -275,20 +320,19 @@ let cachedLoginGeo = null;
 
 // Returns true if login should stop here (blocked screen now showing).
 async function runLoginSecurityGate(user) {
-  if (securityCheckedUserId !== user.id) {
-    securityCheckedUserId = user.id;
+  if (securityCheckedUserId !== user.uid) {
+    securityCheckedUserId = user.uid;
     loginBlockedReason = null;
     cachedLoginGeo = await getGeolocation();
     try {
-      const { data } = await supabase.rpc('check_login_security', {
-        p_latitude: cachedLoginGeo.latitude,
-        p_longitude: cachedLoginGeo.longitude,
-        p_location_status: cachedLoginGeo.status
+      const result = await callFunction('/api/check-login-security', {
+        latitude: cachedLoginGeo.latitude,
+        longitude: cachedLoginGeo.longitude,
+        locationStatus: cachedLoginGeo.status
       });
-      const result = (data && data[0]) || { allowed: true, reason: null };
       if (!result.allowed) loginBlockedReason = result.reason || 'Login is not allowed right now.';
     } catch {
-      // Fails open -- an RPC error here must never lock everyone out.
+      // Fails open -- a server error here must never lock everyone out.
       loginBlockedReason = null;
     }
   }
@@ -312,21 +356,20 @@ loginBlockedLogoutBtn.addEventListener('click', async () => {
   securityCheckedUserId = null;
   otpChallengeUserId = null;
   clearOtpVerified();
-  await supabase.auth.signOut();
+  await signOut(auth);
   renderForSession();
 });
 
 // ---------------------------------------------------------------------
 // 5-digit email verification code, required after every password
-// sign-in/sign-up (see api/send-login-otp.js / api/verify-login-otp.js
-// and migrate_login_otp.sql). Tracked per browser tab via
-// sessionStorage keyed by user id, not anything in the persisted
-// Supabase session -- closing the tab before verifying and reopening
-// starts the challenge over (sessionStorage doesn't survive that), but
-// an ordinary same-tab refresh after verifying doesn't re-prompt. A
-// token refresh re-fires the same onAuthStateChange path as a real
-// sign-in, but never re-triggers this, since it's keyed on user id,
-// which a refresh doesn't change.
+// sign-in/sign-up (see api/send-login-otp.js / api/verify-login-otp.js).
+// Tracked per browser tab via sessionStorage keyed by user id, not
+// anything in the persisted Firebase session -- closing the tab before
+// verifying and reopening starts the challenge over (sessionStorage
+// doesn't survive that), but an ordinary same-tab refresh after
+// verifying doesn't re-prompt. A token refresh re-fires the same
+// onAuthStateChanged path as a real sign-in, but never re-triggers
+// this, since it's keyed on user id, which a refresh doesn't change.
 // ---------------------------------------------------------------------
 function isOtpVerifiedForSession(userId) {
   return sessionStorage.getItem('otpVerifiedUserId') === userId;
@@ -360,8 +403,8 @@ async function sendOtpCode() {
 
 // Only actually sends a fresh code the first time this user id is
 // challenged -- renderForSession() can re-run for the same still-
-// unverified session (e.g. a TOKEN_REFRESHED event), and that must not
-// spam a new email/reset the 60s resend cooldown each time.
+// unverified session (e.g. a token refresh), and that must not spam a
+// new email/reset the 60s resend cooldown each time.
 async function startOtpChallenge(user) {
   // otpScreen is a sibling of authScreen/recoveryScreen inside
   // ownerAppShell (role isn't known yet at this point in the flow, so
@@ -372,8 +415,8 @@ async function startOtpChallenge(user) {
   employeePortalShell.hidden = true;
   otpEmailDisplay.textContent = user.email || 'your email';
   showScreen('otp');
-  if (otpChallengeUserId === user.id) return;
-  otpChallengeUserId = user.id;
+  if (otpChallengeUserId === user.uid) return;
+  otpChallengeUserId = user.uid;
   otpCodeInput.value = '';
   await sendOtpCode();
 }
@@ -391,22 +434,22 @@ function showEmployeePortalScreen(name) {
 }
 
 function computeAccess(profile) {
-  // Checked ahead of is_admin -- a blocked account stays blocked even
-  // if it also happens to carry the admin flag (defense in depth; the
-  // admin_set_business_blocked() RPC itself already refuses to let an
-  // admin block their own account, but this keeps the client-side
-  // logic correct regardless of how is_blocked ends up true).
-  if (profile.is_blocked) {
+  // Checked ahead of isAdmin -- a blocked account stays blocked even if
+  // it also happens to carry the admin flag (defense in depth; the
+  // admin-set-business-blocked endpoint itself already refuses to let
+  // an admin block their own account, but this keeps the client-side
+  // logic correct regardless of how isBlocked ends up true).
+  if (profile.isBlocked) {
     return { hasAccess: false, isAdmin: false, isBlocked: true, inTrial: false, hasPaidAccess: false, trialDaysLeft: 0, paidDaysLeft: 0 };
   }
-  if (profile.is_admin) {
+  if (profile.isAdmin) {
     return { hasAccess: true, isAdmin: true, isBlocked: false, inTrial: false, hasPaidAccess: false, trialDaysLeft: 0, paidDaysLeft: 0 };
   }
 
   const trialDays = EXTENDED_TRIAL_EMAILS[profile.email] ?? TRIAL_DAYS;
   const now = Date.now();
-  const trialEndsAt = new Date(profile.trial_started_at).getTime() + trialDays * DAY_MS;
-  const paidUntil = profile.access_expires_at ? new Date(profile.access_expires_at).getTime() : 0;
+  const trialEndsAt = new Date(profile.trialStartedAt).getTime() + trialDays * DAY_MS;
+  const paidUntil = profile.accessExpiresAt ? new Date(profile.accessExpiresAt).getTime() : 0;
   const inTrial = now < trialEndsAt;
   const hasPaidAccess = now < paidUntil;
   const trialDaysLeft = Math.max(0, Math.ceil((trialEndsAt - now) / DAY_MS));
@@ -414,15 +457,25 @@ function computeAccess(profile) {
   return { hasAccess: inTrial || hasPaidAccess, isAdmin: false, isBlocked: false, inTrial, hasPaidAccess, trialDaysLeft, paidDaysLeft };
 }
 
+// profiles/{uid} mirrors the old `profiles` table 1:1 (camelCase
+// fields). Created by api/complete-signup.js right after signup, or by
+// api/invite-employee.js for an employee -- if neither has run yet
+// (e.g. a network drop between signUp() succeeding and the follow-up
+// call), this legitimately won't exist yet; callers handle a null
+// return rather than assuming it's always there.
 async function fetchProfile() {
-  const { data, error } = await supabase.from('profiles').select('*').single();
-  if (error) throw error;
-  return data;
+  const user = auth.currentUser;
+  const snap = await getDoc(doc(db, 'profiles', user.uid));
+  if (!snap.exists()) return null;
+  return { id: user.uid, ...snap.data() };
 }
 
+// Mirrors the old callFunction() exactly, just swapping the Supabase
+// access token for a Firebase ID token. getIdToken() transparently
+// returns the cached token or refreshes it if it's close to expiring --
+// no manual refresh bookkeeping needed here.
 async function callFunction(path, body) {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
+  const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
   const res = await fetch(path, {
     method: 'POST',
     headers: {
@@ -439,8 +492,10 @@ async function callFunction(path, body) {
 async function pollForAccess(attempts = 5, delayMs = 1500) {
   for (let i = 0; i < attempts; i += 1) {
     const profile = await fetchProfile();
-    const access = computeAccess(profile);
-    if (access.hasAccess) return { profile, access };
+    if (profile) {
+      const access = computeAccess(profile);
+      if (access.hasAccess) return { profile, access };
+    }
     await new Promise(resolve => setTimeout(resolve, delayMs));
   }
   return null;
@@ -510,60 +565,67 @@ function renderAccess(access) {
 }
 
 // An employee-role profile never touches computeAccess()/the owner's
-// trial-or-paid gate at all -- viewing your own payslip and applying for
-// leave is basic HR self-service, not the paid product, so it stays
+// trial-or-paid gate at all -- viewing your own payslip and applying
+// for leave is basic HR self-service, not the paid product, so it stays
 // available even if the business owner's own subscription has lapsed.
-// The only gate an employee is subject to is the RLS "status <>
-// terminated" check baked into every employee-scoped policy: if their own
-// employees row is no longer visible, fetching it here comes back empty
-// and they're shown the revoked message below.
-async function renderEmployeePortal(profile) {
+// The employee's own doc is read by DIRECT path (businesses/{owner}/
+// employees/{employeeId}), both ids straight off the ID token's custom
+// claims -- no query needed the way Supabase needed
+// .eq('auth_user_id', profile.id), since Firestore doesn't have a
+// server-side foreign-key lookup and the claims already encode exactly
+// which document is "mine."
+async function renderEmployeePortal(profile, claims) {
   ownerAppShell.hidden = true;
   employeePortalShell.hidden = false;
   employeePortalRevoked.hidden = true;
   employeePortalBody.hidden = true;
   setPurchaseOverlay(false);
 
-  // Explicitly scoped to this session's own auth_user_id rather than an
-  // unfiltered select -- an approver's own portal session can also see
-  // its assigned applicants' employee rows (approver_read_applicant_employee_records
-  // in migrate_approver_visibility_fix.sql), so an unfiltered select+maybeSingle()
-  // here would throw "multiple rows returned" for any employee who
-  // approves for someone else, surfacing this exact screen as a false
-  // "access revoked" for an account that was never actually revoked.
-  const { data: employee } = await supabase.from('employees').select('*').eq('auth_user_id', profile.id).maybeSingle();
-  if (!employee) {
+  if (!claims.ownerUserId || !claims.employeeId) {
     employeePortalRevoked.hidden = false;
     return;
   }
 
-  // Two independent block switches, both platform-admin-only (see
-  // migrate_admin_business_controls.sql): this specific employee's own
-  // portal access, or their entire business having been blocked (which
-  // an employee session has no RLS visibility into directly, hence the
-  // RPC). Either one shows the exact same "revoked" message -- the
-  // employee doesn't need to know which case it is, only their employer.
-  if (employee.portal_blocked) {
+  const employeeSnap = await getDoc(doc(db, 'businesses', claims.ownerUserId, 'employees', claims.employeeId));
+  if (!employeeSnap.exists() || employeeSnap.data().status === 'terminated') {
     employeePortalRevoked.hidden = false;
     return;
   }
-  const { data: ownerBlocked } = await supabase.rpc('is_my_owner_blocked');
-  if (ownerBlocked) {
+  const employee = { id: employeeSnap.id, ...employeeSnap.data() };
+
+  // Two independent block switches, both platform-admin-only: this
+  // specific employee's own portal access, or their entire business
+  // having been blocked (which an employee session has no read access
+  // to directly -- their own profiles doc isn't the owner's -- hence
+  // the server call). Either one shows the exact same "revoked"
+  // message -- the employee doesn't need to know which case it is,
+  // only their employer.
+  if (employee.portalBlocked) {
     employeePortalRevoked.hidden = false;
     return;
+  }
+  try {
+    const { blocked } = await callFunction('/api/is-my-owner-blocked');
+    if (blocked) {
+      employeePortalRevoked.hidden = false;
+      return;
+    }
+  } catch {
+    // Best-effort -- a transient failure here shouldn't lock a
+    // legitimate employee out of their own portal.
   }
 
-  employeePortalGreeting.textContent = `Welcome, ${employee.first_name}`;
+  employeePortalGreeting.textContent = `Welcome, ${employee.firstName}`;
   employeePortalBody.hidden = false;
   showEmployeePortalScreen(activeEmployeePortalPage);
-  document.dispatchEvent(new CustomEvent('employee-portal:ready', { detail: { employee, profile } }));
+  document.dispatchEvent(new CustomEvent('employee-portal:ready', { detail: { employee, profile, claims } }));
 }
 
 async function renderForSession() {
-  const { data: { session } } = await supabase.auth.getSession();
+  const user = auth.currentUser;
   if (inRecovery) return;
 
-  if (!session) {
+  if (!user) {
     hasActiveSession = false;
     resetIdleTimer();
     otpChallengeUserId = null;
@@ -591,25 +653,42 @@ async function renderForSession() {
   hasActiveSession = true;
   resetIdleTimer();
 
-  // Gate ahead of everything else -- an unverified session sees only the
-  // code-entry screen, never the app shell, regardless of role. Tracked
-  // in sessionStorage rather than anything server-side, so this is a
-  // UX/velocity control layered on top of the real password auth, not a
-  // hard security boundary in its own right (consistent with this app's
-  // other client-side gates -- report passcode, idle logout).
-  if (!isOtpVerifiedForSession(session.user.id)) {
-    if (await runLoginSecurityGate(session.user)) return;
-    await startOtpChallenge(session.user);
+  // Gate ahead of everything else -- an unverified session sees only
+  // the code-entry screen, never the app shell, regardless of role.
+  // Tracked in sessionStorage rather than anything server-side, so this
+  // is a UX/velocity control layered on top of the real password auth,
+  // not a hard security boundary in its own right (consistent with
+  // this app's other client-side gates -- report passcode, idle
+  // logout).
+  if (!isOtpVerifiedForSession(user.uid)) {
+    if (await runLoginSecurityGate(user)) return;
+    await startOtpChallenge(user);
     return;
   }
 
   const profile = await fetchProfile();
-  logSessionOnce(profile, cachedLoginGeo);
+  if (!profile) {
+    // Signup/invite succeeded on the Auth side but the follow-up
+    // profile-creation call never completed (e.g. a dropped network
+    // request) -- ask them to try signing in again rather than getting
+    // stuck on a blank screen; a retry re-runs the same
+    // complete-signup flow.
+    authError.textContent = 'Your account exists but setup didn\'t finish. Please try logging in again.';
+    authError.hidden = false;
+    await signOut(auth);
+    renderForSession();
+    return;
+  }
+
+  const tokenResult = await user.getIdTokenResult();
+  const claims = tokenResult.claims;
+
+  logSessionOnce(profile, claims, cachedLoginGeo);
   showScreenWatermark(profile.email);
 
-  if (profile.role === 'employee') {
+  if (claims.role === 'employee') {
     employeePortalLogoutBtn.hidden = false;
-    await renderEmployeePortal(profile);
+    await renderEmployeePortal(profile, claims);
     return;
   }
 
@@ -621,7 +700,7 @@ async function renderForSession() {
   // /businesses shouldn't land on that screen just because the URL
   // resolved to it -- same page it'd fall back to if the nav button
   // (already hidden for them) didn't exist at all.
-  if ((activeAppPage === 'sessionLogs' || activeAppPage === 'businesses') && !profile.is_admin) activeAppPage = 'calculator';
+  if ((activeAppPage === 'sessionLogs' || activeAppPage === 'businesses') && !profile.isAdmin) activeAppPage = 'calculator';
 
   const checkoutComplete = new URLSearchParams(location.search).get('checkout') === 'complete';
   if (checkoutComplete) {
@@ -741,19 +820,16 @@ forgotPasswordBtn.addEventListener('click', async () => {
   }
 
   forgotPasswordBtn.disabled = true;
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${location.origin}${location.pathname}`
-  });
-  forgotPasswordBtn.disabled = false;
-
-  if (error) {
-    authError.textContent = error.message;
+  try {
+    await sendPasswordResetEmail(auth, email, { url: `${location.origin}${location.pathname}`, handleCodeInApp: true });
+    authInfo.textContent = 'Check your email for a password reset link.';
+    authInfo.hidden = false;
+  } catch (err) {
+    authError.textContent = err.message || 'Could not send the reset email.';
     authError.hidden = false;
-    return;
+  } finally {
+    forgotPasswordBtn.disabled = false;
   }
-
-  authInfo.textContent = 'Check your email for a password reset link.';
-  authInfo.hidden = false;
 });
 
 recoveryForm.addEventListener('submit', async event => {
@@ -769,16 +845,23 @@ recoveryForm.addEventListener('submit', async event => {
     return;
   }
 
-  const { error } = await supabase.auth.updateUser({ password });
-
-  if (error) {
-    recoveryError.textContent = error.message;
+  try {
+    await confirmPasswordReset(auth, recoveryOobCode, password);
+  } catch (err) {
+    recoveryError.textContent = err.message || 'Could not update your password. The link may have expired -- request a new one.';
     recoveryError.hidden = false;
     return;
   }
 
+  // confirmPasswordReset() never signs the user in (unlike Supabase's
+  // recovery flow, which lands you in an active session) -- send them
+  // to the ordinary login form with their new password.
   inRecovery = false;
   recoveryForm.reset();
+  authInfo.textContent = 'Password updated. Log in with your new password.';
+  authInfo.hidden = false;
+  setAuthMode('login');
+  navigateTo('/login');
   renderForSession();
 });
 
@@ -791,12 +874,25 @@ authForm.addEventListener('submit', async event => {
   const password = document.getElementById('authPassword').value;
   const isSignup = authSubmitBtn.dataset.mode === 'signup';
 
-  const { error } = isSignup
-    ? await supabase.auth.signUp({ email, password })
-    : await supabase.auth.signInWithPassword({ email, password });
-
-  if (error) {
-    authError.textContent = error.message;
+  try {
+    if (isSignup) {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      // Creates the profiles doc + sets the initial custom claims
+      // (role:'owner', isAdmin:false, trialStartedAt:now) -- mirrors
+      // handle_new_user(), which ran automatically as a Postgres
+      // trigger; Firestore has no equivalent synchronous trigger this
+      // app can rely on (see api/complete-signup.js), so it's an
+      // explicit follow-up call instead. Force a token refresh
+      // afterward so the newly-set claims are actually on the token
+      // renderForSession() reads next -- a freshly issued token never
+      // carries claims set after it was minted.
+      await callFunction('/api/complete-signup');
+      await cred.user.getIdToken(true);
+    } else {
+      await signInWithEmailAndPassword(auth, email, password);
+    }
+  } catch (err) {
+    authError.textContent = err.message || 'Could not sign in.';
     authError.hidden = false;
     return;
   }
@@ -810,8 +906,7 @@ otpForm.addEventListener('submit', async event => {
   otpVerifyBtn.disabled = true;
   try {
     await callFunction('/api/verify-login-otp', { code: otpCodeInput.value.trim() });
-    const { data: { user } } = await supabase.auth.getUser();
-    markOtpVerified(user.id);
+    markOtpVerified(auth.currentUser.uid);
     otpChallengeUserId = null;
     renderForSession();
   } catch (err) {
@@ -829,7 +924,7 @@ otpResendBtn.addEventListener('click', sendOtpCode);
 otpBackBtn.addEventListener('click', async () => {
   otpChallengeUserId = null;
   clearOtpVerified();
-  await supabase.auth.signOut();
+  await signOut(auth);
   renderForSession();
 });
 
@@ -847,26 +942,29 @@ authToggleBtn.addEventListener('click', () => {
 });
 
 logoutBtn.addEventListener('click', async () => {
-  await supabase.auth.signOut();
+  await signOut(auth);
   renderForSession();
 });
 
 employeePortalLogoutBtn.addEventListener('click', async () => {
-  await supabase.auth.signOut();
+  await signOut(auth);
   renderForSession();
 });
 
 purchaseLogoutBtn.addEventListener('click', async () => {
-  await supabase.auth.signOut();
+  await signOut(auth);
   renderForSession();
 });
 
-supabase.auth.onAuthStateChange(event => {
-  if (event === 'PASSWORD_RECOVERY') {
-    inRecovery = true;
-    showScreen('recovery');
-    return;
-  }
+// Firebase's onAuthStateChanged has no distinct event-type discrimination
+// the way Supabase's onAuthStateChange did (SIGNED_IN/SIGNED_OUT/
+// PASSWORD_RECOVERY/TOKEN_REFRESHED as a string) -- it just calls back
+// with the current user (or null) any time auth state changes,
+// including a token refresh. renderForSession() itself already
+// tolerates being re-run for the same still-valid session (every gate
+// inside it is idempotent/keyed by user id), so no event-type branching
+// is needed here the way the old PASSWORD_RECOVERY case required.
+onAuthStateChanged(auth, () => {
   if (inRecovery) return;
   renderForSession();
 });

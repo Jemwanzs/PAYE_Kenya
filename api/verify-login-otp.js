@@ -1,4 +1,4 @@
-const { supabaseAdmin, getAuthenticatedUser } = require('./_supabaseAdmin');
+const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
 const crypto = require('crypto');
 
 const MAX_ATTEMPTS = 5;
@@ -21,19 +21,21 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const { data: otpRow, error: fetchError } = await supabaseAdmin
-    .from('login_otps')
-    .select('*')
-    .eq('user_id', user.id)
-    .is('consumed_at', null)
-    .order('created_at', { ascending: false })
+  const otpsRef = firestoreAdmin.collection('loginOtps');
+  const snap = await otpsRef
+    .where('userId', '==', user.uid)
+    .where('consumedAt', '==', null)
+    .orderBy('createdAt', 'desc')
     .limit(1)
-    .maybeSingle();
-  if (fetchError || !otpRow) {
+    .get();
+  if (snap.empty) {
     res.status(400).json({ error: 'No active code. Request a new one.' });
     return;
   }
-  if (new Date(otpRow.expires_at).getTime() < Date.now()) {
+  const otpDoc = snap.docs[0];
+  const otpRow = otpDoc.data();
+
+  if (new Date(otpRow.expiresAt).getTime() < Date.now()) {
     res.status(400).json({ error: 'This code has expired. Request a new one.' });
     return;
   }
@@ -42,14 +44,14 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const codeHash = crypto.createHash('sha256').update(`${user.id}:${code}`).digest('hex');
-  if (codeHash !== otpRow.code_hash) {
-    await supabaseAdmin.from('login_otps').update({ attempts: otpRow.attempts + 1 }).eq('id', otpRow.id);
+  const codeHash = crypto.createHash('sha256').update(`${user.uid}:${code}`).digest('hex');
+  if (codeHash !== otpRow.codeHash) {
+    await otpDoc.ref.update({ attempts: otpRow.attempts + 1 });
     const remaining = MAX_ATTEMPTS - (otpRow.attempts + 1);
     res.status(400).json({ error: remaining > 0 ? `Incorrect code. ${remaining} attempt${remaining === 1 ? '' : 's'} left.` : 'Too many attempts. Request a new code.' });
     return;
   }
 
-  await supabaseAdmin.from('login_otps').update({ consumed_at: new Date().toISOString() }).eq('id', otpRow.id);
+  await otpDoc.ref.update({ consumedAt: new Date().toISOString() });
   res.status(200).json({ verified: true });
 };

@@ -1,4 +1,4 @@
-const { supabaseAdmin, getAuthenticatedUser } = require('./_supabaseAdmin');
+const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
 const crypto = require('crypto');
 
 const RESEND_MIN_INTERVAL_MS = 60 * 1000;
@@ -20,31 +20,32 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const { data: recent } = await supabaseAdmin
-    .from('login_otps')
-    .select('created_at')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (recent && Date.now() - new Date(recent.created_at).getTime() < RESEND_MIN_INTERVAL_MS) {
-    res.status(429).json({ error: 'Please wait a minute before requesting another code.' });
-    return;
+  const otpsRef = firestoreAdmin.collection('loginOtps');
+  const recentSnap = await otpsRef.where('userId', '==', user.uid).orderBy('createdAt', 'desc').limit(1).get();
+  if (!recentSnap.empty) {
+    const recent = recentSnap.docs[0].data();
+    if (Date.now() - new Date(recent.createdAt).getTime() < RESEND_MIN_INTERVAL_MS) {
+      res.status(429).json({ error: 'Please wait a minute before requesting another code.' });
+      return;
+    }
   }
 
   // 5-digit, zero-padded so e.g. 00512 stays a valid-looking 5-digit
   // code instead of silently becoming a 3-digit one.
   const code = String(crypto.randomInt(0, 100000)).padStart(5, '0');
-  const codeHash = crypto.createHash('sha256').update(`${user.id}:${code}`).digest('hex');
-  const expiresAt = new Date(Date.now() + CODE_TTL_MS).toISOString();
+  const codeHash = crypto.createHash('sha256').update(`${user.uid}:${code}`).digest('hex');
 
-  const { error: insertError } = await supabaseAdmin.from('login_otps').insert({
-    user_id: user.id,
-    code_hash: codeHash,
-    expires_at: expiresAt
-  });
-  if (insertError) {
-    console.error('send-login-otp insert failed', insertError);
+  try {
+    await otpsRef.add({
+      userId: user.uid,
+      codeHash,
+      expiresAt: new Date(Date.now() + CODE_TTL_MS).toISOString(),
+      consumedAt: null,
+      attempts: 0,
+      createdAt: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('send-login-otp insert failed', err);
     res.status(500).json({ error: 'Could not generate a verification code.' });
     return;
   }
