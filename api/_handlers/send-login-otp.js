@@ -1,4 +1,4 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
 const crypto = require('crypto');
 
 const RESEND_MIN_INTERVAL_MS = 60 * 1000;

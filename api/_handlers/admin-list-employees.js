@@ -1,4 +1,4 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
 
 // Mirrors admin_list_employees(p_owner_user_id) from the old schema --
 // the admin dashboard's drill-down into one business's employee list.

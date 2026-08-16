@@ -1,6 +1,6 @@
 const dns = require('dns').promises;
 const net = require('net');
-const { getAuthenticatedUser } = require('./_firebaseAdmin');
+const { getAuthenticatedUser } = require('../_firebaseAdmin');
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 6000;

@@ -1,4 +1,4 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
 
 // Called by an employee's own portal session to find out whether their
 // business's owner has been blocked -- they have no read access to the

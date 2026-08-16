@@ -1,4 +1,4 @@
-const { firestoreAdmin, authAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
+const { firestoreAdmin, authAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
 
 // Firebase's Admin SDK has no built-in "invite by email" the way
 // Supabase's inviteUserByEmail() was -- it only creates the Auth user

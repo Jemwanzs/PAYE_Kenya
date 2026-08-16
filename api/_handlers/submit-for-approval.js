@@ -1,5 +1,5 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
-const { createApprovalActions } = require('./_approvalActions');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
+const { createApprovalActions } = require('../_approvalActions');
 
 // Owner-triggered: mirrors submit_for_approval() from the old schema.
 // Leave applications don't need this -- they're already "submitted" the

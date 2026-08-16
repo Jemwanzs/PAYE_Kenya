@@ -1,5 +1,5 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
-const defaultPayrollSettings = require('./_defaultSettings');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
+const defaultPayrollSettings = require('../_defaultSettings');
 
 // Atomically formats and reserves the next employee number for the
 // caller's own business -- mirrors next_employee_number() from the old

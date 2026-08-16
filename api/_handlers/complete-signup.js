@@ -1,4 +1,4 @@
-const { firestoreAdmin, authAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
+const { firestoreAdmin, authAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
 
 // Creates the profiles/{uid} doc and sets the initial custom claims
 // (role:'owner', isAdmin:false) right after a fresh owner signup --

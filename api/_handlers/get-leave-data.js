@@ -1,5 +1,5 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
-const { defaultPayrollSettings } = require('./_defaultSettings');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
+const defaultPayrollSettings = require('../_defaultSettings');
 
 // The employee portal's leave tab shares its whole data layer (balance
 // math, calendar, eligibility) with the owner's Leave page (see

@@ -1,4 +1,4 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
 
 // Mirrors admin_set_employee_blocked() from the old schema -- blocks/
 // unblocks one employee's own portal access, independent of the

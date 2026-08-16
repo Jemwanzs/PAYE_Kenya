@@ -1,5 +1,5 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
-const { createApprovalActions } = require('./_approvalActions');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
+const { createApprovalActions } = require('../_approvalActions');
 
 // Leave applications are "submitted" the instant they're created,
 // regardless of whether the owner's or the employee portal's UI created

@@ -1,4 +1,4 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
 
 // Mirrors record_approval_decision() from the old schema. A Firestore
 // transaction replaces the implicit row-locking a single Postgres

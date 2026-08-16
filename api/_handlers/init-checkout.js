@@ -1,5 +1,5 @@
-const { getAuthenticatedUser } = require('./_firebaseAdmin');
-const { amountForDays } = require('./_dayPackages');
+const { getAuthenticatedUser } = require('../_firebaseAdmin');
+const { amountForDays } = require('../_dayPackages');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {

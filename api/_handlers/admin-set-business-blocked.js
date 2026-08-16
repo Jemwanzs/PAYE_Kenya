@@ -1,4 +1,4 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
 
 // Mirrors admin_set_business_blocked() from the old schema. Refuses to
 // let an admin block their own account -- a self-lockout would need a

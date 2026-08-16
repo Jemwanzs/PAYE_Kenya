@@ -1,4 +1,4 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
 
 // Mirrors admin_list_businesses() from the old schema. Returns an empty
 // list for a non-admin caller rather than a 403 -- lets the client

@@ -1,4 +1,4 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
 
 // Replaces the approver_assigned_*_ids()/approver_visible_*_ids()
 // SECURITY DEFINER functions from the old schema, plus the client-side

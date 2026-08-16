@@ -1,4 +1,4 @@
-const { firestoreAdmin, getAuthenticatedUser } = require('./_firebaseAdmin');
+const { firestoreAdmin, getAuthenticatedUser } = require('../_firebaseAdmin');
 
 function toMinutes(hhmm) {
   const [h, m] = String(hhmm || '00:00').split(':').map(Number);

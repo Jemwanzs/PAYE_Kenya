@@ -1,4 +1,4 @@
-const { getAuthenticatedUser } = require('./_firebaseAdmin');
+const { getAuthenticatedUser } = require('../_firebaseAdmin');
 
 const MAX_HTML_LENGTH = 2_000_000;
 
