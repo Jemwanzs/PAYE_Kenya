@@ -52,6 +52,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // a day-pass same as normal.
 const EXTENDED_TRIAL_EMAILS = { 'jamosammy@gmail.com': 60 };
 
+// Platform operator account(s) -- granted the isAdmin custom claim (and
+// mirrored Firestore field) automatically on next login via
+// api/_handlers/bootstrap-admin.js, which independently checks this same
+// list server-side (keep both in sync). Lets the person who owns this
+// deployment monitor every tenant and their employees (adminBusinesses.js,
+// adminSessionLogs.js) without a manual Firestore Console edit -- there's
+// no admin UI for setting custom claims, so this is the bootstrap path.
+const SUPER_ADMIN_EMAILS = ['jamosammy@gmail.com'];
+
 // Keep in sync with the authoritative price list in api/_dayPackages.js.
 const DAY_PACKAGES = [
   { days: 1, amount: 200 },
@@ -678,6 +687,22 @@ async function renderForSession() {
     await signOut(auth);
     renderForSession();
     return;
+  }
+
+  // One-time bootstrap: a listed operator email that hasn't been granted
+  // isAdmin yet gets it now, then re-runs this function so everything
+  // below sees the fresh profile/claims -- never fires again once
+  // isAdmin is true. Best-effort: a failure here just leaves them as a
+  // normal owner for this render, not stuck.
+  if (!profile.isAdmin && SUPER_ADMIN_EMAILS.includes(profile.email)) {
+    try {
+      await callFunction('/api/bootstrap-admin');
+      await user.getIdToken(true);
+      renderForSession();
+      return;
+    } catch {
+      // Falls through to normal rendering below.
+    }
   }
 
   const tokenResult = await user.getIdTokenResult();

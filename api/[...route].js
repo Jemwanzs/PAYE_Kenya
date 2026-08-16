@@ -12,11 +12,19 @@
 // top-level function since it needs its own `bodyParser: false` config
 // for signature verification, which can't be set per-route within a
 // shared function.
+//
+// Routing reads req.url directly rather than Vercel's dynamic-segment
+// req.query.route -- on this project (static build, no framework), that
+// query param never populated correctly (every request fell through to
+// the 404 branch, even ones matching a real route), so parsing the raw
+// URL sidesteps whatever translation Vercel's zero-config routing was
+// doing differently than expected.
 const routes = {
   'admin-list-businesses': require('./_handlers/admin-list-businesses'),
   'admin-list-employees': require('./_handlers/admin-list-employees'),
   'admin-set-business-blocked': require('./_handlers/admin-set-business-blocked'),
   'admin-set-employee-blocked': require('./_handlers/admin-set-employee-blocked'),
+  'bootstrap-admin': require('./_handlers/bootstrap-admin'),
   'check-login-security': require('./_handlers/check-login-security'),
   'complete-signup': require('./_handlers/complete-signup'),
   'create-leave-application': require('./_handlers/create-leave-application'),
@@ -35,8 +43,8 @@ const routes = {
 };
 
 module.exports = async function handler(req, res) {
-  const segments = req.query.route;
-  const key = Array.isArray(segments) ? segments.join('/') : segments;
+  const pathname = (req.url || '').split('?')[0];
+  const key = pathname.replace(/^\/api\//, '').replace(/\/+$/, '');
   const route = routes[key];
 
   if (!route) {
