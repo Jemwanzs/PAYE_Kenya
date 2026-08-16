@@ -20,11 +20,20 @@ const confirmActionBtn = document.getElementById('businessesConfirmActionBtn');
 const confirmCancelBtn = document.getElementById('businessesConfirmCancelBtn');
 const confirmCloseBtn = document.getElementById('businessesConfirmCloseBtn');
 
+const editOverlay = document.getElementById('businessEditOverlay');
+const editForm = document.getElementById('businessEditForm');
+const editNameInput = document.getElementById('businessEditName');
+const editError = document.getElementById('businessEditError');
+const editSaveBtn = document.getElementById('businessEditSaveBtn');
+const editCancelBtn = document.getElementById('businessEditCancelBtn');
+const editCloseBtn = document.getElementById('businessEditCloseBtn');
+
 let businessesCache = [];
 let businessesLoaded = false;
 let expandedUserId = null;
 let expandedEmployees = [];
 let pendingConfirmAction = null;
+let editingUserId = null;
 
 function closeConfirm() {
   confirmOverlay.hidden = true;
@@ -56,6 +65,41 @@ confirmActionBtn.addEventListener('click', async () => {
     confirmError.hidden = false;
   } finally {
     confirmActionBtn.disabled = false;
+  }
+});
+
+function closeEdit() {
+  editOverlay.hidden = true;
+  editError.hidden = true;
+  editingUserId = null;
+}
+
+function openEdit(row) {
+  editingUserId = row.userId;
+  editNameInput.value = row.businessName || '';
+  editError.hidden = true;
+  editOverlay.hidden = false;
+  editNameInput.focus();
+}
+
+editCloseBtn.addEventListener('click', closeEdit);
+editCancelBtn.addEventListener('click', closeEdit);
+editOverlay.addEventListener('click', event => { if (event.target === editOverlay) closeEdit(); });
+
+editForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!editingUserId) return;
+  editError.hidden = true;
+  editSaveBtn.disabled = true;
+  try {
+    await callFunction('/api/admin-update-business', { userId: editingUserId, businessName: editNameInput.value });
+    closeEdit();
+    await loadBusinesses({ force: true });
+  } catch (err) {
+    editError.textContent = err.message || 'Could not save this business name.';
+    editError.hidden = false;
+  } finally {
+    editSaveBtn.disabled = false;
   }
 });
 
@@ -151,6 +195,7 @@ function renderTable() {
         <td>${row.employeeCount}</td>
         <td>${fmtDate(row.createdAt)}</td>
         <td>
+          <button type="button" class="ghost-button business-edit-btn" data-user-id="${row.userId}">Edit</button>
           <button type="button" class="ghost-button business-expand-btn" data-user-id="${row.userId}">${expandedUserId === row.userId ? 'Hide employees' : 'View employees'}</button>
           ${row.isAdmin ? '' : `<button type="button" class="ghost-button business-block-btn" data-user-id="${row.userId}" data-email="${row.email || ''}" data-blocked="${row.isBlocked}">${row.isBlocked ? 'Unblock' : 'Block'}</button>`}
         </td>
@@ -194,6 +239,13 @@ function setBusinessBlocked(userId, blocked) {
 }
 
 tableBody.addEventListener('click', event => {
+  const editBtn = event.target.closest('.business-edit-btn');
+  if (editBtn) {
+    const row = businessesCache.find(b => b.userId === editBtn.dataset.userId);
+    if (row) openEdit(row);
+    return;
+  }
+
   const expandBtn = event.target.closest('.business-expand-btn');
   if (expandBtn) {
     toggleExpand(expandBtn.dataset.userId);

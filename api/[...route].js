@@ -24,6 +24,7 @@ const routes = {
   'admin-list-employees': require('./_handlers/admin-list-employees'),
   'admin-set-business-blocked': require('./_handlers/admin-set-business-blocked'),
   'admin-set-employee-blocked': require('./_handlers/admin-set-employee-blocked'),
+  'admin-update-business': require('./_handlers/admin-update-business'),
   'bootstrap-admin': require('./_handlers/bootstrap-admin'),
   'check-login-security': require('./_handlers/check-login-security'),
   'complete-signup': require('./_handlers/complete-signup'),

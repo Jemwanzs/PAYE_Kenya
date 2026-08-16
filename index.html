@@ -1704,6 +1704,23 @@
     </div>
   </div>
 
+  <div class="purchase-overlay" id="businessEditOverlay" hidden>
+    <div class="purchase-modal" style="max-width:420px">
+      <button type="button" class="modal-close" id="businessEditCloseBtn" aria-label="Close">&times;</button>
+      <p class="eyebrow"><span class="eyebrow-dot"></span>Edit business</p>
+      <h2 id="businessEditTitle">Business name</h2>
+      <form id="businessEditForm">
+        <label for="businessEditName">Business name</label>
+        <input type="text" id="businessEditName" required maxlength="200" />
+        <p class="auth-error" id="businessEditError" hidden></p>
+        <div class="auth-actions" style="margin-top:14px">
+          <button type="submit" class="primary-button" id="businessEditSaveBtn">Save</button>
+          <button type="button" class="ghost-button" id="businessEditCancelBtn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="script.js"></script>
