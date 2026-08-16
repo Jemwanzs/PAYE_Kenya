@@ -225,6 +225,7 @@ if (inRecovery) {
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 let idleTimer = null;
 let hasActiveSession = false;
+let profileRecoveryAttempted = false;
 
 function resetIdleTimer() {
   if (idleTimer) clearTimeout(idleTimer);
@@ -639,6 +640,7 @@ async function renderForSession() {
     resetIdleTimer();
     otpChallengeUserId = null;
     securityCheckedUserId = null;
+    profileRecoveryAttempted = false;
     clearOtpVerified();
     hideScreenWatermark();
     ownerAppShell.hidden = false;
@@ -677,11 +679,32 @@ async function renderForSession() {
 
   const profile = await fetchProfile();
   if (!profile) {
-    // Signup/invite succeeded on the Auth side but the follow-up
-    // profile-creation call never completed (e.g. a dropped network
-    // request) -- ask them to try signing in again rather than getting
-    // stuck on a blank screen; a retry re-runs the same
-    // complete-signup flow.
+    // Signup succeeded on the Auth side but the follow-up profile-
+    // creation call never completed (e.g. a dropped network request, or
+    // the API routing issue this account first hit) -- an owner-signup
+    // orphan is recoverable by just calling complete-signup again (it's
+    // idempotent), but ONLY safe to auto-retry when this token has never
+    // had ANY role claim set at all: an invited employee's profile and
+    // claims are written together, atomically, by invite-employee.js's
+    // single Admin SDK request -- if that ever ran, both exist together,
+    // so a null profile with no role claim can only be an abandoned
+    // owner signup, never a partially-invited employee (which would
+    // wrongly get claimed as an owner here otherwise). Guarded to fire
+    // at most once per browser session so a genuinely broken account
+    // still lands on the error message below instead of looping.
+    const tokenResult = await user.getIdTokenResult();
+    if (!tokenResult.claims.role && !profileRecoveryAttempted) {
+      profileRecoveryAttempted = true;
+      try {
+        await callFunction('/api/complete-signup');
+        await user.getIdToken(true);
+        renderForSession();
+        return;
+      } catch {
+        // Falls through to the error message below.
+      }
+    }
+
     authError.textContent = 'Your account exists but setup didn\'t finish. Please try logging in again.';
     authError.hidden = false;
     await signOut(auth);
