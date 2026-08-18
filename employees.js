@@ -47,6 +47,7 @@ const employeeForm = document.getElementById('employeeFormView');
 const employeeSaveBtn = document.getElementById('employeeSaveBtn');
 const employeeTerminateBtn = document.getElementById('employeeTerminateBtn');
 const employeeRehireBtn = document.getElementById('employeeRehireBtn');
+const employeeDeleteBtn = document.getElementById('employeeDeleteBtn');
 const compensationFieldsContainer = document.getElementById('employeeCompensationFields');
 
 const terminateOverlay = document.getElementById('terminateOverlay');
@@ -57,6 +58,13 @@ const terminateEmployeeName = document.getElementById('terminateEmployeeName');
 const terminateDate = document.getElementById('terminateDate');
 const terminateReason = document.getElementById('terminateReason');
 const terminateError = document.getElementById('terminateError');
+
+const employeeDeleteOverlay = document.getElementById('employeeDeleteOverlay');
+const employeeDeleteName = document.getElementById('employeeDeleteName');
+const employeeDeleteCloseBtn = document.getElementById('employeeDeleteCloseBtn');
+const employeeDeleteCancelBtn = document.getElementById('employeeDeleteCancelBtn');
+const employeeDeleteConfirmBtn = document.getElementById('employeeDeleteConfirmBtn');
+const employeeDeleteError = document.getElementById('employeeDeleteError');
 
 const employeeTypeDropdown = document.getElementById('employeeTypeDropdown');
 const employeeTypeTrigger = document.getElementById('employeeTypeTrigger');
@@ -599,6 +607,7 @@ function resetForm() {
   employeeFormNumber.textContent = 'Number assigned on save';
   employeeTerminateBtn.hidden = true;
   employeeRehireBtn.hidden = true;
+  employeeDeleteBtn.hidden = true;
   employeeForm.reset();
   earningComponents.forEach(item => {
     const affectsByDefault = !irregularComponentIds.includes(item.id);
@@ -618,6 +627,11 @@ function populateForm(employee) {
   employeeFormNumber.textContent = employee.employeeNumber || '';
   employeeTerminateBtn.hidden = employee.status !== 'active';
   employeeRehireBtn.hidden = employee.status !== 'terminated';
+  // Always available for an existing record regardless of status --
+  // unlike Terminate/Rehire (a reversible status change), this is a
+  // separate, permanent removal, meant for a genuine mistake (duplicate
+  // records, a test entry) rather than normal offboarding.
+  employeeDeleteBtn.hidden = false;
 
   document.getElementById('employeeFirstName').value = employee.firstName || '';
   document.getElementById('employeeLastName').value = employee.lastName || '';
@@ -1128,6 +1142,41 @@ employeeRehireBtn.addEventListener('click', async () => {
   } catch {
     // Best-effort -- stays on the form if it failed.
   }
+});
+
+employeeDeleteBtn.addEventListener('click', () => {
+  if (!currentEmployeeId) return;
+  employeeDeleteError.hidden = true;
+  employeeDeleteName.textContent = `Delete ${employeeFormTitle.textContent}?`;
+  employeeDeleteOverlay.hidden = false;
+});
+
+employeeDeleteCloseBtn.addEventListener('click', () => { employeeDeleteOverlay.hidden = true; });
+employeeDeleteCancelBtn.addEventListener('click', () => { employeeDeleteOverlay.hidden = true; });
+
+// Payslips keep their own embedded employeeSnapshot/compensationSnapshot
+// copy rather than a live reference (see payroll.js's computePayslipRow),
+// so deleting the source employee record afterward never corrupts a
+// historical payroll run -- unlike compensationItemsCache's dated
+// entries, which genuinely belong to this employee alone and would
+// otherwise sit orphaned in Firestore forever.
+employeeDeleteConfirmBtn.addEventListener('click', async () => {
+  if (!currentEmployeeId) return;
+  employeeDeleteError.hidden = true;
+  employeeDeleteConfirmBtn.disabled = true;
+  try {
+    const itemsSnap = await getDocs(query(businessCollection('employeeCompensationItems'), where('employeeId', '==', currentEmployeeId)));
+    await Promise.all(itemsSnap.docs.map(d => deleteDoc(d.ref)));
+    await deleteDoc(businessDoc('employees', currentEmployeeId));
+  } catch (err) {
+    employeeDeleteError.textContent = err.message || 'Could not delete this employee.';
+    employeeDeleteError.hidden = false;
+    employeeDeleteConfirmBtn.disabled = false;
+    return;
+  }
+  employeeDeleteConfirmBtn.disabled = false;
+  employeeDeleteOverlay.hidden = true;
+  showDirectory();
 });
 
 function renderLookupList(key, items) {

@@ -653,6 +653,7 @@
           <button type="submit" class="primary-button" id="employeeSaveBtn">Save employee</button>
           <button type="button" class="ghost-button" id="employeeTerminateBtn" hidden>Terminate</button>
           <button type="button" class="ghost-button" id="employeeRehireBtn" hidden>Rehire</button>
+          <button type="button" class="ghost-button" id="employeeDeleteBtn" hidden>Delete</button>
         </div>
       </form>
 
@@ -672,6 +673,20 @@
               <button type="button" class="ghost-button" id="terminateCancelBtn">Cancel</button>
             </div>
           </form>
+        </div>
+      </div>
+
+      <div class="purchase-overlay" id="employeeDeleteOverlay" hidden>
+        <div class="purchase-modal" style="max-width:420px">
+          <button type="button" class="modal-close" id="employeeDeleteCloseBtn" aria-label="Close">&times;</button>
+          <p class="eyebrow"><span class="eyebrow-dot"></span>Delete employee</p>
+          <h2 id="employeeDeleteName">Delete this employee?</h2>
+          <p class="hero-copy">This permanently removes their record and cannot be undone. Past payslips are unaffected -- they keep their own saved copy of this employee's details. If they may return, use Terminate instead.</p>
+          <p class="auth-error" id="employeeDeleteError" hidden></p>
+          <div class="auth-actions" style="margin-top:14px">
+            <button type="button" class="primary-button" id="employeeDeleteConfirmBtn">Delete permanently</button>
+            <button type="button" class="ghost-button" id="employeeDeleteCancelBtn">Cancel</button>
+          </div>
         </div>
       </div>
 
