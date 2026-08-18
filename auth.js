@@ -564,6 +564,16 @@ function renderAccess(access) {
   showScreen(activeAppPage);
   appNavButtons.forEach(b => { if (b.dataset.page) b.setAttribute('aria-selected', String(b.dataset.page === activeAppPage)); });
   navigateTo(APP_PAGE_PATHS[activeAppPage]);
+  // Every page module's first data load is triggered by this same event,
+  // but it's otherwise only ever dispatched from a nav-button click or
+  // popstate (below) -- neither fires on the very first render of a
+  // session, so landing directly on a deep-linked page (a bookmark, a
+  // refresh, or just re-opening the tab on /employees) showed an empty
+  // shell that never actually loaded, even with real data in Firestore.
+  // Each listener already guards its own re-fetch (e.g. employees.js's
+  // `if (!employeesLoaded)`), so firing this on every render here is
+  // harmless -- it's a no-op past the first successful load.
+  if (access.hasAccess) document.dispatchEvent(new CustomEvent('app:page', { detail: { page: activeAppPage } }));
   calculatorGate.classList.toggle('blurred', !access.hasAccess);
   screens.employees.classList.toggle('blurred', !access.hasAccess);
   screens.payroll.classList.toggle('blurred', !access.hasAccess);

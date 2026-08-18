@@ -129,15 +129,27 @@ function togglesFromEmployee(employee) {
   return toggles;
 }
 
-async function loadRunSettings() {
-  const snap = await getDoc(businessDoc('settings', 'main'));
-  return settingsFromRow(snap.exists() ? snap.data() : {
+// Merges per-field over the defaults rather than an all-or-nothing "doc
+// exists? use it as-is" check -- a settings doc that exists but is
+// missing some of these fields (e.g. one only ever touched by
+// api/admin-update-business.js, which merge-writes just businessName)
+// would otherwise pass individual `undefined`s straight into
+// computePayroll(), which Firestore's set()/batch writes then reject
+// outright ("Unsupported field value: undefined") the moment a payroll
+// run tries to save.
+function runSettingsDefaults() {
+  return {
     nssfRate: 6, nssfUpperLimit: 108000, shifRate: 2.75, shifMinimum: 300,
     ahlEmployeeRate: 1.5, ahlEmployerRate: 1.5, personalRelief: 2400, nitaLevy: 50,
     insuranceReliefCap: 5000, telephoneThreshold: 5000, mealsThreshold: 5000,
     allowableDeductionCap: 30000, perDiemThreshold: 10000, daysInMonth: 30,
     secondaryFlatRate: 35, contractorWhtRate: 5, pwdExemption: 150000
-  });
+  };
+}
+
+async function loadRunSettings() {
+  const snap = await getDoc(businessDoc('settings', 'main'));
+  return settingsFromRow({ ...runSettingsDefaults(), ...(snap.exists() ? snap.data() : {}) });
 }
 
 function computePayslipRow({ runId, employee, isFinalDues, settings, compensationItems, periodStart, periodEnd }) {

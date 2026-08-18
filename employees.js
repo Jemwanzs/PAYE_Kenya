@@ -153,8 +153,14 @@ function defaultSettings() {
 async function loadSettings({ force = false } = {}) {
   if (cachedSettings && !force) return cachedSettings;
   if (!settingsLoadPromise || force) {
+    // Merges per-field over the defaults rather than an all-or-nothing
+    // "doc exists? use it as-is" check -- a settings doc that exists but
+    // is missing some of these fields (e.g. one only ever touched by
+    // api/admin-update-business.js, which merge-writes just
+    // businessName) would otherwise leave every other field undefined
+    // here too.
     settingsLoadPromise = getDoc(businessDoc('settings', 'main')).then(snap => {
-      cachedSettings = snap.exists() ? snap.data() : defaultSettings();
+      cachedSettings = { ...defaultSettings(), ...(snap.exists() ? snap.data() : {}) };
       return cachedSettings;
     });
   }
